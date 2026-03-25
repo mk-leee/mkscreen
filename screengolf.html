@@ -1423,25 +1423,29 @@ function addPlayer() {
   renderPlayers();
 }
 
-function openNewMatchModal() {
+function buildPlayerSelectList() {
   if(!state.players.length) {
-    showToast('⚠️ 먼저 플레이어를 등록하세요');
-    switchTab('players');
-    return;
+    return `<div style="padding:12px;text-align:center;color:var(--text-light);font-size:13px">등록된 플레이어가 없습니다</div>`;
   }
-
-  const today = new Date().toISOString().split('T')[0];
-  const playerList = state.players.map((p, i) => {
+  return state.players.map((p, i) => {
     const ci = i % 4;
+    const isSelected = selectedPlayers.includes(p.id);
     return `
-      <label style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;cursor:pointer;transition:background 0.1s" id="pLabel_${p.id}">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;cursor:pointer;transition:background 0.1s;background:${isSelected?'rgba(74,140,92,0.1)':''}" id="pLabel_${p.id}">
         <input type="checkbox" id="pCheck_${p.id}" onchange="togglePlayerSelect('${p.id}')" style="display:none">
         <div style="width:36px;height:36px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:15px">${p.name[0]}</div>
         <span style="font-weight:600">${p.name}</span>
         ${p.handicap ? `<span style="font-size:11px;color:var(--text-light)">H${p.handicap}</span>` : ''}
-        <span style="margin-left:auto;font-size:18px;display:none" id="pCheck_icon_${p.id}">✓</span>
+        <span style="margin-left:auto;font-size:18px;display:${isSelected?'inline':'none'}" id="pCheck_icon_${p.id}">✓</span>
       </label>`;
   }).join('');
+}
+
+function openNewMatchModal() {
+  selectedPlayers = [];
+  matchBetMode = state.settings.betMode;
+
+  const today = new Date().toISOString().split('T')[0];
 
   openModal(`
     <div class="modal-title">⛳ 새 경기 만들기</div>
@@ -1469,13 +1473,60 @@ function openNewMatchModal() {
       <input class="input-field input-number" id="newMatchAmount" type="number" value="${state.settings.baseAmount}" min="100" step="500">
     </div>
     <div class="input-group">
-      <label class="input-label">참가자 선택 *</label>
-      <div id="playerSelectList">${playerList}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label class="input-label" style="margin-bottom:0">참가자 선택 *</label>
+        <button onclick="toggleInlineAddPlayer()" style="background:none;border:1px solid var(--primary);color:var(--primary);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">+ 플레이어 추가</button>
+      </div>
+      <div id="playerSelectList">${buildPlayerSelectList()}</div>
+      <div id="inlineAddPlayerForm" style="display:none;margin-top:8px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-light)">새 플레이어 등록</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input class="input-field" id="inlinePlayerName" placeholder="이름 *" maxlength="10" style="flex:2;margin-bottom:0" onkeydown="if(event.key==='Enter')addPlayerFromMatch()">
+          <input class="input-field input-number" id="inlinePlayerHc" type="number" min="0" max="36" placeholder="핸디" style="flex:1;margin-bottom:0">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="addPlayerFromMatch()" style="padding:8px;font-size:13px">등록 후 선택</button>
+      </div>
     </div>
     <button class="btn btn-gold btn-full" onclick="createMatch()" style="margin-top:8px;font-size:16px;padding:14px">
       ⛳ 경기 시작!
     </button>
   `);
+}
+
+function toggleInlineAddPlayer() {
+  const form = document.getElementById('inlineAddPlayerForm');
+  if(!form) return;
+  const isHidden = form.style.display === 'none';
+  form.style.display = isHidden ? 'block' : 'none';
+  if(isHidden) setTimeout(() => document.getElementById('inlinePlayerName')?.focus(), 50);
+}
+
+function addPlayerFromMatch() {
+  const name = document.getElementById('inlinePlayerName')?.value?.trim();
+  if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
+  if(state.players.find(p => p.name === name)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
+  const hc = document.getElementById('inlinePlayerHc')?.value;
+  const newPlayer = { id: uid(), name, handicap: hc ? Number(hc) : null };
+  state.players.push(newPlayer);
+  saveState();
+
+  // 자동으로 선택
+  if(selectedPlayers.length < 4) {
+    selectedPlayers.push(newPlayer.id);
+  }
+
+  // 플레이어 목록 새로고침
+  const listEl = document.getElementById('playerSelectList');
+  if(listEl) listEl.innerHTML = buildPlayerSelectList();
+
+  // 인라인 폼 초기화
+  const nameInput = document.getElementById('inlinePlayerName');
+  const hcInput = document.getElementById('inlinePlayerHc');
+  if(nameInput) nameInput.value = '';
+  if(hcInput) hcInput.value = '';
+
+  showToast(`✅ ${name} 등록 완료!`);
+  renderPlayers();
 }
 
 let selectedPlayers = [];
