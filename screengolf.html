@@ -699,6 +699,7 @@
     <div class="logo">
       <span class="logo-icon">⛳</span>
       <span>스크린골프 정산</span>
+      <span id="appVersionBadge" style="font-size:10px;font-weight:400;color:var(--gold-light);opacity:0.7;margin-left:2px;font-family:'Noto Sans KR',sans-serif;letter-spacing:0"></span>
     </div>
     <div class="header-actions" id="headerActions"></div>
   </div>
@@ -741,6 +742,8 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
+const APP_VERSION = 'v1.5.0';
+
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
 const COLOR_HEX = ['#2ecc71','#3498db','#e74c3c','#9b59b6'];
@@ -1885,6 +1888,7 @@ if(!state.players.length && !state.matches.length) {
 }
 
 render();
+document.getElementById('appVersionBadge').textContent = APP_VERSION;
 </script>
 </body>
 </html>
