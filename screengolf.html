@@ -396,23 +396,42 @@
     z-index: 1;
   }
   .score-input-cell {
-    padding: 4px 2px;
+    padding: 3px 1px;
   }
-  .score-input-cell input {
-    width: 44px;
-    height: 36px;
-    text-align: center;
-    border: 1.5px solid var(--cream-dark);
-    border-radius: 6px;
+  .score-stepper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .score-stepper-btn {
+    width: 32px;
+    height: 18px;
+    border: none;
+    background: var(--cream-dark);
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    color: var(--text-mid);
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.1s;
+  }
+  .score-stepper-btn:active {
+    background: var(--green-light);
+    color: white;
+  }
+  .score-stepper-val {
     font-size: 16px;
     font-weight: 700;
+    min-width: 32px;
+    text-align: center;
+    line-height: 1.5;
     font-family: 'Noto Sans KR', sans-serif;
-    -webkit-appearance: none;
-  }
-  .score-input-cell input:focus {
-    outline: none;
-    border-color: var(--green-light);
-    background: rgba(74,140,92,0.05);
   }
   .score-winner { background: rgba(212,168,67,0.2) !important; }
   .score-cell {
@@ -1043,14 +1062,16 @@ function renderScorecard() {
     const back9 = scores.slice(9,18).reduce((s, v) => s + (v ? Number(v) : 0), 0);
 
     const cells = scores.map((sc, hi) => {
+      const par = state.settings.par[hi];
+      const hasScore = sc !== '' && sc !== null && sc !== undefined;
+      const dispVal = hasScore ? Number(sc) : par;
+      const dispColor = hasScore ? COLOR_HEX[ci] : 'var(--text-light)';
       return `<td class="score-input-cell">
-        <input type="number" min="1" max="20" value="${sc || ''}"
-          id="sc_${p.id}_${hi}"
-          onchange="updateScore('${p.id}',${hi},this.value)"
-          onfocus="this.select()"
-          inputmode="numeric"
-          style="color:${COLOR_HEX[ci]}"
-        >
+        <div class="score-stepper">
+          <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
+          <div class="score-stepper-val" id="sc_${p.id}_${hi}" style="color:${dispColor}">${dispVal}</div>
+          <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
+        </div>
       </td>`;
     }).join('');
 
@@ -1060,9 +1081,9 @@ function renderScorecard() {
           ${p.name}${p.handicap ? `<br><span style="font-size:10px;color:var(--text-light)">H${p.handicap}</span>` : ''}
         </td>
         ${cells}
-        <td class="total-col score-cell">${front9 || '-'}</td>
-        <td class="total-col score-cell">${back9 || '-'}</td>
-        <td class="total-col score-cell" style="background:var(--cream-dark)">${total || '-'}</td>
+        <td class="total-col score-cell" id="row_front_${p.id}">${front9 || '-'}</td>
+        <td class="total-col score-cell" id="row_back_${p.id}">${back9 || '-'}</td>
+        <td class="total-col score-cell" id="row_tot_${p.id}" style="background:var(--cream-dark)">${total || '-'}</td>
       </tr>`;
   }).join('');
 
@@ -1084,9 +1105,9 @@ function renderScorecard() {
       let mult = 1;
       if (match.bettingRule?.birdieBonus && holeScores.some(s => s === par - 1)) mult++;
       if (match.bettingRule?.doubleParBonus && holeScores.some(s => s >= par * 2)) mult++;
-      if (mult === 1) return `<td style="padding:3px 2px;text-align:center"></td>`;
+      if (mult === 1) return `<td id="mult_cell_${hi}" style="padding:3px 2px;text-align:center"></td>`;
       const color = mult === 3 ? '#c0392b' : '#d4a843';
-      return `<td style="padding:3px 2px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:3px;padding:1px 3px">×${mult}</span></td>`;
+      return `<td id="mult_cell_${hi}" style="padding:3px 2px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:3px;padding:1px 3px">×${mult}</span></td>`;
     }).join('');
     return `<tr style="background:#fffbf0">
       <td style="padding:4px 10px;font-size:10px;color:var(--gold);font-weight:700;position:sticky;left:0;background:#fffbf0">배율</td>
@@ -1100,8 +1121,8 @@ function renderScorecard() {
       <div style="font-family:'Black Han Sans',sans-serif;font-size:18px;color:var(--green-dark)">${match.course}</div>
       <div style="font-size:12px;color:var(--text-light)">${formatDate(match.date)} · ${players.length}명</div>
       <div style="margin-top:8px">
-        <div class="progress-bar"><div class="progress-fill" style="width:${(entered/18*100).toFixed(0)}%"></div></div>
-        <div style="font-size:11px;color:var(--text-light)">${entered}/18 홀 · ${(entered/18*100).toFixed(0)}% 완료</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:${(entered/18*100).toFixed(0)}%"></div></div>
+        <div id="progressText" style="font-size:11px;color:var(--text-light)">${entered}/18 홀 · ${(entered/18*100).toFixed(0)}% 완료</div>
       </div>
     </div>
 
@@ -1362,6 +1383,59 @@ function openMatch(id) {
   state.activeMatchId = id;
   state.currentTab = 'scorecard';
   render();
+}
+
+function adjustScore(pid, hi, delta) {
+  const match = state.matches.find(m => m.id === state.activeMatchId);
+  if (!match) return;
+  const par = state.settings.par[hi];
+  const current = match.scores?.[pid]?.[hi];
+  const base = (current !== '' && current !== null && current !== undefined) ? Number(current) : par;
+  const newVal = Math.max(1, base + delta);
+  if (!match.scores) match.scores = {};
+  if (!match.scores[pid]) match.scores[pid] = new Array(18).fill('');
+  match.scores[pid][hi] = newVal;
+  saveState();
+
+  // 스코어 셀 업데이트
+  const ci = state.players.findIndex(p => p.id === pid) % 4;
+  const valEl = document.getElementById(`sc_${pid}_${hi}`);
+  if (valEl) { valEl.textContent = newVal; valEl.style.color = COLOR_HEX[ci]; }
+
+  // 행 합계 업데이트
+  const scores = match.scores[pid];
+  const front9 = scores.slice(0,9).reduce((s,v) => s + (v !== '' && v !== null ? Number(v) : 0), 0);
+  const back9  = scores.slice(9,18).reduce((s,v) => s + (v !== '' && v !== null ? Number(v) : 0), 0);
+  const tot = front9 + back9;
+  const fe = document.getElementById(`row_front_${pid}`); if (fe) fe.textContent = front9 || '-';
+  const be = document.getElementById(`row_back_${pid}`);  if (be) be.textContent = back9  || '-';
+  const te = document.getElementById(`row_tot_${pid}`);   if (te) te.textContent = tot    || '-';
+
+  // 진행률 업데이트
+  const entered = countEnteredHoles(match);
+  const pct = (entered / 18 * 100).toFixed(0);
+  const pf = document.getElementById('progressFill');  if (pf) pf.style.width = pct + '%';
+  const pt = document.getElementById('progressText');  if (pt) pt.textContent = `${entered}/18 홀 · ${pct}% 완료`;
+
+  // 배율 셀 업데이트
+  if (match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus) {
+    const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+    const par_h = state.settings.par[hi];
+    const holeScores = players.map(p => {
+      const sc = match.scores?.[p.id]?.[hi];
+      return (sc !== '' && sc !== null && sc !== undefined) ? { pid: p.id, score: Number(sc) } : null;
+    }).filter(Boolean);
+    const birdieExempt = match.bettingRule?.birdieExempt ?? [];
+    const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
+    let mult = 1;
+    if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par_h - 1)) mult++;
+    if (match.bettingRule?.doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par_h * 2)) mult++;
+    const mc = document.getElementById(`mult_cell_${hi}`);
+    if (mc) {
+      if (mult === 1) { mc.innerHTML = ''; }
+      else { const col = mult === 3 ? '#c0392b' : '#d4a843'; mc.innerHTML = `<span style="font-size:10px;font-weight:700;color:${col};background:${col}22;border-radius:3px;padding:1px 3px">×${mult}</span>`; }
+    }
+  }
 }
 
 function updateScore(pid, holeIdx, val) {
