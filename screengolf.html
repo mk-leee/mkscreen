@@ -742,7 +742,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.6.0';
+const APP_VERSION = 'v1.7.0';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -853,6 +853,23 @@ function calcHoleResults(match) {
 
   // 마지막 이월 스킨팟 처리 (경기 종료 시 분배 안 함 - 남은 팟)
   return { holeResults: results, remainingSkinPot: skinPot };
+}
+
+/** 최소 거래로 정산 계산 */
+function calcSettlements(players, totals) {
+  const bal = players.map(p => ({ p, amt: Math.round(totals[p.id]?.amount || 0) }));
+  const txns = [];
+  for (let i = 0; i < 100; i++) { // 무한루프 방지
+    const debtors   = bal.filter(b => b.amt < -1).sort((a, b) => a.amt - b.amt);
+    const creditors = bal.filter(b => b.amt >  1).sort((a, b) => b.amt - a.amt);
+    if (!debtors.length || !creditors.length) break;
+    const d = debtors[0], c = creditors[0];
+    const amt = Math.min(Math.abs(d.amt), c.amt);
+    txns.push({ from: d.p, to: c.p, amt });
+    d.amt += amt;
+    c.amt -= amt;
+  }
+  return txns;
 }
 
 /** 플레이어별 합계 */
@@ -1255,6 +1272,33 @@ function renderResults() {
           </div>
         </div>`;
     }).join('')}
+
+    ${(() => {
+      const settlements = calcSettlements(players, totals);
+      if (!settlements.length) return '';
+      const rows = settlements.map(tx => {
+        const fromCi = state.players.findIndex(pl => pl.id === tx.from.id) % 4;
+        const toCi   = state.players.findIndex(pl => pl.id === tx.to.id)   % 4;
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--cream-dark)">
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+              <div style="width:32px;height:32px;border-radius:50%;background:${COLOR_HEX[fromCi]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:13px;flex-shrink:0">${tx.from.name[0]}</div>
+              <span style="font-size:13px;font-weight:700;color:var(--text-dark);white-space:nowrap">${tx.from.name}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0">
+              <span style="font-size:13px;font-weight:900;color:var(--red-light)">▶</span>
+              <span style="font-size:12px;font-weight:700;color:var(--text-dark);white-space:nowrap">${tx.amt.toLocaleString()}원</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:flex-end">
+              <span style="font-size:13px;font-weight:700;color:var(--text-dark);white-space:nowrap">${tx.to.name}</span>
+              <div style="width:32px;height:32px;border-radius:50%;background:${COLOR_HEX[toCi]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:13px;flex-shrink:0">${tx.to.name[0]}</div>
+            </div>
+          </div>`;
+      }).join('');
+      return `
+        <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">💸 정산 방법</div>
+        <div class="card" style="padding:0;overflow:hidden">${rows}</div>`;
+    })()}
 
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">📊 홀별 내역</div>
     <div class="card" style="padding:0;overflow:hidden">
