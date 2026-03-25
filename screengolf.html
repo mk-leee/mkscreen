@@ -760,9 +760,11 @@ function calcHoleMultiplier(match, h, holeScores) {
   const doubleParBonus = match.bettingRule?.doubleParBonus ?? false;
   if (!birdieBonus && !doubleParBonus) return 1;
   const par = state.settings.par[h];
+  const birdieExempt = match.bettingRule?.birdieExempt ?? [];
+  const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
   let mult = 1;
-  if (birdieBonus && holeScores.some(s => s.score === par - 1)) mult++;
-  if (doubleParBonus && holeScores.some(s => s.score >= par * 2)) mult++;
+  if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par - 1)) mult++;
+  if (doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par * 2)) mult++;
   return mult; // 최대 3배 (1 + 1 + 1)
 }
 
@@ -1172,12 +1174,15 @@ function renderResults() {
     <div style="margin-bottom:16px">
       <div style="font-family:'Black Han Sans',sans-serif;font-size:18px;color:var(--green-dark)">${match.course}</div>
       <div style="font-size:12px;color:var(--text-light)">${formatDate(match.date)} · ${mode === 'skin' ? '스킨' : '타수차'} · ${base.toLocaleString()}원</div>
-      ${(match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus) ? `
-      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-        ${match.bettingRule?.birdieBonus ? `<span style="font-size:11px;background:rgba(212,168,67,0.15);color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:2px 7px;font-weight:600">🦅 버디 ×2</span>` : ''}
-        ${match.bettingRule?.doubleParBonus ? `<span style="font-size:11px;background:rgba(192,57,43,0.1);color:#c0392b;border:1px solid #c0392b;border-radius:4px;padding:2px 7px;font-weight:600">💀 더블파 ×2</span>` : ''}
-        <span style="font-size:11px;color:var(--text-light)">중복 최대 ×3</span>
-      </div>` : ''}
+      ${(match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus) ? (() => {
+        const birdieExemptNames = (match.bettingRule?.birdieExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
+        const doubleParExemptNames = (match.bettingRule?.doubleParExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
+        return `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${match.bettingRule?.birdieBonus ? `<span style="font-size:11px;background:rgba(212,168,67,0.15);color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:2px 7px;font-weight:600">🦅 버디 ×2${birdieExemptNames.length ? ` <span style="font-weight:400">(${birdieExemptNames.join('·')} 예외)</span>` : ''}</span>` : ''}
+          ${match.bettingRule?.doubleParBonus ? `<span style="font-size:11px;background:rgba(192,57,43,0.1);color:#c0392b;border:1px solid #c0392b;border-radius:4px;padding:2px 7px;font-weight:600">💀 더블파 ×2${doubleParExemptNames.length ? ` <span style="font-weight:400">(${doubleParExemptNames.join('·')} 예외)</span>` : ''}</span>` : ''}
+          <span style="font-size:11px;color:var(--text-light)">중복 최대 ×3</span>
+        </div>`;
+      })() : ''}
     </div>
 
     ${entered < 18 ? `
@@ -1472,6 +1477,8 @@ function openNewMatchModal() {
   matchBetMode = state.settings.betMode;
   matchBirdieBonus = false;
   matchDoubleParBonus = false;
+  matchBirdieExempt = [];
+  matchDoubleParExempt = [];
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -1520,6 +1527,7 @@ function openNewMatchModal() {
         <button onclick="toggleInlineAddPlayer()" style="background:none;border:1px solid var(--primary);color:var(--primary);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">+ 플레이어 추가</button>
       </div>
       <div id="playerSelectList">${buildPlayerSelectList()}</div>
+      <div id="bonusExemptSection" style="display:none;margin-top:10px;padding:10px 12px;background:#fffbf0;border-radius:8px;border:1px solid rgba(212,168,67,0.3)"></div>
       <div id="inlineAddPlayerForm" style="display:none;margin-top:8px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-light)">새 플레이어 등록</div>
         <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -1575,6 +1583,8 @@ let selectedPlayers = [];
 let matchBetMode = state.settings.betMode;
 let matchBirdieBonus = false;
 let matchDoubleParBonus = false;
+let matchBirdieExempt = [];   // 버디 보너스 예외 플레이어 IDs
+let matchDoubleParExempt = []; // 더블파 보너스 예외 플레이어 IDs
 
 function togglePlayerSelect(pid) {
   const label = document.getElementById(`pLabel_${pid}`);
@@ -1584,12 +1594,16 @@ function togglePlayerSelect(pid) {
     selectedPlayers.splice(idx, 1);
     label.style.background = '';
     if(icon) icon.style.display = 'none';
+    // 예외 목록에서도 제거
+    matchBirdieExempt = matchBirdieExempt.filter(id => id !== pid);
+    matchDoubleParExempt = matchDoubleParExempt.filter(id => id !== pid);
   } else {
     if(selectedPlayers.length >= 4) { showToast('⚠️ 최대 4명까지 선택 가능합니다'); return; }
     selectedPlayers.push(pid);
     label.style.background = 'rgba(74,140,92,0.1)';
     if(icon) icon.style.display = 'inline';
   }
+  refreshBonusExemptSection();
 }
 
 function toggleMatchMode(mode) {
@@ -1602,6 +1616,7 @@ function toggleMatchMode(mode) {
 function toggleMatchBonus(type) {
   if (type === 'birdie') {
     matchBirdieBonus = !matchBirdieBonus;
+    if (!matchBirdieBonus) matchBirdieExempt = [];
     const btn = document.getElementById('bonusBirdieBtn');
     if (btn) {
       btn.style.borderColor = matchBirdieBonus ? 'var(--gold)' : 'var(--border)';
@@ -1610,6 +1625,7 @@ function toggleMatchBonus(type) {
     }
   } else {
     matchDoubleParBonus = !matchDoubleParBonus;
+    if (!matchDoubleParBonus) matchDoubleParExempt = [];
     const btn = document.getElementById('bonusDoubleParBtn');
     if (btn) {
       btn.style.borderColor = matchDoubleParBonus ? '#c0392b' : 'var(--border)';
@@ -1617,6 +1633,59 @@ function toggleMatchBonus(type) {
       btn.style.color = matchDoubleParBonus ? '#c0392b' : 'var(--text-mid)';
     }
   }
+  refreshBonusExemptSection();
+}
+
+function refreshBonusExemptSection() {
+  const section = document.getElementById('bonusExemptSection');
+  if (!section) return;
+
+  const hasBonus = matchBirdieBonus || matchDoubleParBonus;
+  const players = selectedPlayers.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
+
+  if (!hasBonus || players.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  const makeChips = (exemptList, type, color) =>
+    players.map(p => {
+      const isExempt = exemptList.includes(p.id);
+      return `<button onclick="toggleBonusExempt('${type}','${p.id}')" id="exemptChip_${type}_${p.id}"
+        style="padding:4px 10px;border-radius:20px;border:1.5px solid ${isExempt ? color : 'var(--border)'};
+               background:${isExempt ? color+'22' : 'var(--white)'};color:${isExempt ? color : 'var(--text-mid)'};
+               font-size:12px;font-weight:${isExempt ? '700' : '400'};cursor:pointer;transition:all 0.15s">
+        ${p.name}
+      </button>`;
+    }).join('');
+
+  let html = `<div style="font-size:12px;font-weight:700;color:var(--text-mid);margin-bottom:8px">🚫 보너스 예외 설정</div>`;
+
+  if (matchBirdieBonus) {
+    html += `<div style="margin-bottom:${matchDoubleParBonus ? '10px' : '0'}">
+      <div style="font-size:11px;color:var(--gold);font-weight:600;margin-bottom:5px">🦅 버디 ×2 예외</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${makeChips(matchBirdieExempt, 'birdie', 'var(--gold)')}</div>
+    </div>`;
+  }
+  if (matchDoubleParBonus) {
+    html += `<div>
+      <div style="font-size:11px;color:#c0392b;font-weight:600;margin-bottom:5px">💀 더블파 ×2 예외</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${makeChips(matchDoubleParExempt, 'doublePar', '#c0392b')}</div>
+    </div>`;
+  }
+
+  html += `<div style="font-size:11px;color:var(--text-light);margin-top:7px">선택된 플레이어의 해당 규칙은 배율 트리거에서 제외됩니다</div>`;
+
+  section.innerHTML = html;
+  section.style.display = 'block';
+}
+
+function toggleBonusExempt(type, pid) {
+  const list = type === 'birdie' ? matchBirdieExempt : matchDoubleParExempt;
+  const idx = list.indexOf(pid);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(pid);
+  refreshBonusExemptSection();
 }
 
 function createMatch() {
@@ -1632,7 +1701,7 @@ function createMatch() {
     date,
     course,
     playerIds: [...selectedPlayers],
-    bettingRule: { mode: matchBetMode, baseAmount: amount, birdieBonus: matchBirdieBonus, doubleParBonus: matchDoubleParBonus },
+    bettingRule: { mode: matchBetMode, baseAmount: amount, birdieBonus: matchBirdieBonus, doubleParBonus: matchDoubleParBonus, birdieExempt: [...matchBirdieExempt], doubleParExempt: [...matchDoubleParExempt] },
     scores: {},
     done: false
   };
