@@ -624,20 +624,49 @@ function calcResults(players, scores, mode, amount) {
   const wins = Object.fromEntries(players.map(p => [p.id, 0]));
   const holeResults = [];
 
-  for (let h = 0; h < 18; h++) {
-    const hScores = players.map(p => ({ id: p.id, s: scores[p.id]?.[h] || 0 })).filter(x => x.s > 0);
-    if (hScores.length < 2) { holeResults.push(null); continue; }
-    const min = Math.min(...hScores.map(x => x.s));
-    const winners = hScores.filter(x => x.s === min);
-    if (winners.length > 1) { holeResults.push({ tie: true, scores: hScores }); continue; }
-    const w = winners[0];
-    wins[w.id]++;
-    let pay = 0;
-    hScores.forEach(x => {
-      if (x.id !== w.id) { const d = (x.s - min) * amount; earnings[x.id] -= d; pay += d; }
-    });
-    earnings[w.id] += pay;
-    holeResults.push({ winnerId: w.id, scores: hScores });
+  if (mode === "skin") {
+    // ── 스킨 방식: 단독 최저타 시 적립 팟 전체 획득, 타이 시 이월 ──
+    let pot = 0;
+    for (let h = 0; h < 18; h++) {
+      const hScores = players.map(p => ({ id: p.id, s: scores[p.id]?.[h] || 0 })).filter(x => x.s > 0);
+      if (hScores.length < 2) { holeResults.push(null); continue; }
+
+      // 각 참여자가 기본금액씩 팟에 적립
+      pot += amount * hScores.length;
+      const min = Math.min(...hScores.map(x => x.s));
+      const winners = hScores.filter(x => x.s === min);
+
+      if (winners.length === 1) {
+        const w = winners[0];
+        wins[w.id]++;
+        const share = pot / hScores.length; // 1인당 기여분
+        hScores.forEach(x => {
+          earnings[x.id] += x.id === w.id ? pot - share : -share;
+        });
+        holeResults.push({ winnerId: w.id, pot, scores: hScores });
+        pot = 0;
+      } else {
+        // 타이: 다음 홀로 이월
+        holeResults.push({ tie: true, pot, scores: hScores });
+      }
+    }
+  } else {
+    // ── 타수차 방식: 최저타 대비 차이 × 기본금액 정산 ──
+    for (let h = 0; h < 18; h++) {
+      const hScores = players.map(p => ({ id: p.id, s: scores[p.id]?.[h] || 0 })).filter(x => x.s > 0);
+      if (hScores.length < 2) { holeResults.push(null); continue; }
+      const min = Math.min(...hScores.map(x => x.s));
+      const winners = hScores.filter(x => x.s === min);
+      if (winners.length > 1) { holeResults.push({ tie: true, scores: hScores }); continue; }
+      const w = winners[0];
+      wins[w.id]++;
+      let pay = 0;
+      hScores.forEach(x => {
+        if (x.id !== w.id) { const d = (x.s - min) * amount; earnings[x.id] -= d; pay += d; }
+      });
+      earnings[w.id] += pay;
+      holeResults.push({ winnerId: w.id, scores: hScores });
+    }
   }
 
   const totalStrokes = Object.fromEntries(players.map(p => [p.id, (scores[p.id] || []).reduce((a,b)=>a+b,0)]));
@@ -645,8 +674,30 @@ function calcResults(players, scores, mode, amount) {
   return { summary, holeResults };
 }
 
+// 최소 거래로 정산: 채권자-채무자 매칭
+function calcSettlements(players, summary) {
+  const bal = players.map(p => {
+    const s = summary.find(x => x.id === p.id);
+    return { p, amt: s ? s.earnings : 0 };
+  });
+  const txns = [];
+  for (let i = 0; i < 50; i++) {
+    const debtors   = bal.filter(b => b.amt < -1).sort((a,b) => a.amt - b.amt);
+    const creditors = bal.filter(b => b.amt >  1).sort((a,b) => b.amt - a.amt);
+    if (!debtors.length || !creditors.length) break;
+    const d = debtors[0], c = creditors[0];
+    const amt = Math.min(Math.abs(d.amt), c.amt);
+    txns.push({ from: d.p, to: c.p, amt: Math.round(amt) });
+    d.amt += amt;
+    c.amt -= amt;
+  }
+  return txns;
+}
+
 function fmt(n) { return (n > 0 ? "+" : "") + n.toLocaleString() + "원"; }
-function colorFor(pid) { const idx = SAMPLE_PLAYERS.findIndex(p => p.id === pid); return COLORS[idx % COLORS.length]; }
+
+// pid를 players 배열 인덱스로 찾아 색상 반환 — SAMPLE_PLAYERS 의존성 제거
+function colorForIdx(idx) { return COLORS[((idx % COLORS.length) + COLORS.length) % COLORS.length]; }
 
 // ─────────────────────────────────────────────
 // SUB-COMPONENTS
@@ -668,10 +719,11 @@ function StatusBar() {
 }
 
 function AvatarChip({ player, idx }) {
+  const c = colorForIdx(idx);
   return (
-    <span className="avatar-chip" style={{ background: COLORS[idx % 4] + "18" }}>
-      <span className="avatar-dot" style={{ background: COLORS[idx % 4] }}>{player.name[0]}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: COLORS[idx % 4] }}>{player.name}</span>
+    <span className="avatar-chip" style={{ background: c + "18" }}>
+      <span className="avatar-dot" style={{ background: c }}>{player.name[0]}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: c }}>{player.name}</span>
     </span>
   );
 }
@@ -680,7 +732,19 @@ function AvatarChip({ player, idx }) {
 // SCREEN 1 — MAIN (Match List)
 // ─────────────────────────────────────────────
 function Screen1Main({ onNew, onSelect }) {
-  const totalEarnings = 18500;
+  // 실제 샘플 데이터 기반 통계 계산
+  const now = new Date();
+  const monthMatches = SAMPLE_MATCHES.filter(m => {
+    const d = new Date(m.date);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  });
+  const allEarnings = SAMPLE_MATCHES.filter(m => m.done && m.scores).reduce((sum, m) => {
+    const { summary } = calcResults(m.players, m.scores, m.mode, m.amount);
+    const me = summary.find(p => p.id === "p1");
+    return sum + (me?.earnings || 0);
+  }, 0);
+  const teammates = new Set(SAMPLE_MATCHES.flatMap(m => m.players.map(p => p.id).filter(id => id !== "p1"))).size;
+
   return (
     <div className="main-screen">
       {/* ① AppHeader */}
@@ -694,7 +758,11 @@ function Screen1Main({ onNew, onSelect }) {
         </div>
         {/* ② StatsRow */}
         <div className="stats-row">
-          {[["2", "이번 달 경기"], ["+₩18,500", "누적 수익"], ["4", "함께한 동료"]].map(([v,l]) => (
+          {[
+            [String(monthMatches.length), "이번 달 경기"],
+            [fmt(allEarnings), "누적 수익"],
+            [String(teammates), "함께한 동료"],
+          ].map(([v,l]) => (
             <div className="stat-pill" key={l}>
               <div className="stat-val">{v}</div>
               <div className="stat-lbl">{l}</div>
@@ -823,27 +891,44 @@ function Screen2Create({ onBack, onStart }) {
 // ─────────────────────────────────────────────
 // SCREEN 3 — SCORECARD
 // ─────────────────────────────────────────────
-function Screen3Score({ match, onBack, onFinish }) {
+function Screen3Score({ match, scores, onScoreChange, onBack, onFinish }) {
   const players = match?.players || SAMPLE_PLAYERS;
   const [hole, setHole] = useState(0); // 0-indexed
-  const [scores, setScores] = useState(() => Object.fromEntries(players.map(p => [p.id, new Array(18).fill(0)])));
   const [quickTarget, setQuickTarget] = useState(null);
 
-  const setScore = (pid, val) => {
-    setScores(prev => {
-      const next = { ...prev, [pid]: [...prev[pid]] };
-      next[pid][hole] = Math.max(1, Math.min(15, val));
-      return next;
+  // scores는 App 레벨에서 관리 (prop으로 수신)
+  const setScore = useCallback((pid, val) => {
+    onScoreChange(prev => {
+      const arr = [...(prev[pid] || new Array(18).fill(0))];
+      // val===0은 "미입력" 초기화, 그 외 1~20 클램프
+      arr[hole] = val === 0 ? 0 : Math.max(1, Math.min(20, val));
+      return { ...prev, [pid]: arr };
     });
-  };
+  }, [hole, onScoreChange]);
 
-  // Min score this hole for delta display
-  const holeVals = players.map(p => scores[p.id][hole]).filter(v => v > 0);
+  // Min score this hole for delta display (0은 미입력이므로 제외)
+  const holeVals = players.map(p => scores[p.id]?.[hole] || 0).filter(v => v > 0);
   const minScore = holeVals.length ? Math.min(...holeVals) : null;
 
-  const allFilled = players.every(p => scores[p.id][hole] > 0);
-  const donePct = players.reduce((sum,p) => sum + p.id === "p1" ? 1 : 0, 0);
-  const completedHoles = Math.min(...players.map(p => p.id === "p1" ? hole : hole));
+  const allFilled = players.every(p => (scores[p.id]?.[hole] || 0) > 0);
+  const completedHoles = Array.from({ length: 18 }, (_, hi) =>
+    players.every(p => (scores[p.id]?.[hi] || 0) > 0)
+  ).filter(Boolean).length;
+
+  // 스킨 모드 실제 적립 팟 계산
+  const skinPot = (() => {
+    if (match?.mode !== "skin") return 0;
+    let pot = 0;
+    for (let h = 0; h < hole; h++) {
+      const hVals = players.map(p => scores[p.id]?.[h] || 0).filter(v => v > 0);
+      if (hVals.length < 2) continue;
+      const min = Math.min(...hVals);
+      const winners = hVals.filter(v => v === min);
+      pot += (match?.amount || 1000) * hVals.length;
+      if (winners.length === 1) pot = 0; // 단독 승자가 팟 수거
+    }
+    return pot;
+  })();
 
   return (
     <div className="score-screen">
@@ -872,16 +957,16 @@ function Screen3Score({ match, onBack, onFinish }) {
       <div className="hole-info-bar">
         <div className="hole-number">HOLE {hole+1}</div>
         <div className="hole-par-badge">PAR {PAR[hole]}</div>
-        {hole > 0 && <div style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>{hole}/18 완료</div>}
-        {match?.mode === "skin" && hole > 2 && (
-          <div className="hole-carry">팟 ₩{(2000*(hole+1)).toLocaleString()} 이월</div>
+        {completedHoles > 0 && <div style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>{completedHoles}/18 완료</div>}
+        {match?.mode === "skin" && skinPot > 0 && (
+          <div className="hole-carry">팟 ₩{skinPot.toLocaleString()} 이월</div>
         )}
       </div>
 
       {/* ④ ScoreRows */}
       <div className="score-entries">
         {players.map((p, i) => {
-          const v = scores[p.id][hole];
+          const v = scores[p.id]?.[hole] || 0;
           const isMin = v > 0 && minScore !== null && v === minScore;
           const isWinner = isMin && holeVals.filter(x=>x===minScore).length === 1;
           const delta = v > 0 && minScore ? v - minScore : null;
@@ -902,11 +987,11 @@ function Screen3Score({ match, onBack, onFinish }) {
               </div>
               {/* ⑤ ScoreStepper */}
               <div className="score-stepper">
-                <button className="step-btn minus" onClick={()=>setScore(p.id,v-1)}>−</button>
-                <div className="step-val" style={v>0?{color:COLORS[i]}:{}} onClick={()=>setQuickTarget(p.id)}>
+                <button className="step-btn minus" onClick={()=>setScore(p.id, v > 1 ? v-1 : 0)}>−</button>
+                <div className="step-val" style={v>0?{color:colorForIdx(i)}:{}} onClick={()=>setQuickTarget(p.id)}>
                   {v || "·"}
                 </div>
-                <button className="step-btn plus" onClick={()=>setScore(p.id,(v||PAR[hole])+1)}>+</button>
+                <button className="step-btn plus" onClick={()=>setScore(p.id, v > 0 ? v+1 : PAR[hole])}>+</button>
               </div>
             </div>
           );
@@ -941,7 +1026,15 @@ function Screen3Score({ match, onBack, onFinish }) {
                   {n}
                 </button>
               ))}
-              <button className="numpad-key del" onClick={()=>{setScore(quickTarget,0);setQuickTarget(null);}}>⌫</button>
+              {/* 삭제: setScore(0)으로 미입력 상태로 복원 (Math.max 클램프 우회) */}
+              <button className="numpad-key del" onClick={()=>{
+                onScoreChange(prev => {
+                  const arr = [...(prev[quickTarget] || new Array(18).fill(0))];
+                  arr[hole] = 0;
+                  return { ...prev, [quickTarget]: arr };
+                });
+                setQuickTarget(null);
+              }}>⌫</button>
               <button className="numpad-key" onClick={()=>{setScore(quickTarget,10);setQuickTarget(null);}}>10</button>
               <button className="numpad-key action" onClick={()=>setQuickTarget(null)}>✓</button>
             </div>
@@ -955,13 +1048,23 @@ function Screen3Score({ match, onBack, onFinish }) {
 // ─────────────────────────────────────────────
 // SCREEN 4 — RESULTS
 // ─────────────────────────────────────────────
-function Screen4Results({ match, onBack, onNewMatch }) {
+function Screen4Results({ match, scores, onBack, onNewMatch }) {
   const m = match || SAMPLE_MATCHES[0];
   const players = m.players;
-  const { summary, holeResults } = calcResults(players, m.scores || SAMPLE_SCORES, m.mode, m.amount);
+  // 실제 입력 스코어 우선, 없으면 match.scores, 그것도 없으면 샘플
+  const effectiveScores = (scores && Object.keys(scores).length > 0) ? scores : (m.scores || SAMPLE_SCORES);
+  const { summary, holeResults } = calcResults(players, effectiveScores, m.mode, m.amount);
+
+  // players 배열에서 인덱스 기반으로 색상 결정 (SAMPLE_PLAYERS 의존성 제거)
+  const playerColorMap = Object.fromEntries(players.map((p, i) => [p.id, colorForIdx(i)]));
+
   const winner = summary[0];
   const rankColors = ["rank-1","rank-2","rank-3","rank-4"];
   const rankEmoji = ["🥇","🥈","🥉","4"];
+  // 최소 거래 정산 계산
+  const settlements = calcSettlements(players, summary);
+  // 전체 홀 파 합계 (PAR 배열 기준)
+  const parTotal = PAR.reduce((a,b)=>a+b,0);
 
   return (
     <div className="result-screen">
@@ -975,7 +1078,7 @@ function Screen4Results({ match, onBack, onNewMatch }) {
         {/* ② WinnerSpotlight */}
         <div className="winner-spotlight">
           <div className="winner-crown">👑</div>
-          <div className="winner-avatar-lg" style={{ background: colorFor(winner.id) }}>{winner.name[0]}</div>
+          <div className="winner-avatar-lg" style={{ background: playerColorMap[winner.id] }}>{winner.name[0]}</div>
           <div className="winner-name">{winner.name}</div>
           <div className="winner-amount">{fmt(winner.earnings)}</div>
           <div className="winner-strokes">총 {winner.strokes}타 · {winner.wins}홀 승리</div>
@@ -986,30 +1089,33 @@ function Screen4Results({ match, onBack, onNewMatch }) {
         {/* ③ RankingCard */}
         <div className="result-card">
           <div className="result-card-header">📊 전체 순위</div>
-          {summary.map((p, i) => (
-            <div className="ranking-row" key={p.id}>
-              <div className={`rank-num ${rankColors[i]}`}>{rankEmoji[i]}</div>
-              <div className="rank-avatar" style={{ background: colorFor(p.id) }}>{p.name[0]}</div>
-              <div className="rank-info">
-                <div className="rank-name">{p.name}{p.hc ? <span style={{fontSize:11,color:"#aaa",fontWeight:400,marginLeft:4}}>H{p.hc}</span> : null}</div>
-                <div className="rank-detail">{p.strokes}타 · {p.strokes - 72 >= 0 ? "+" : ""}{p.strokes - 72} 오버</div>
+          {summary.map((p, i) => {
+            const overPar = p.strokes - parTotal;
+            return (
+              <div className="ranking-row" key={p.id}>
+                <div className={`rank-num ${rankColors[i] || "rank-4"}`}>{rankEmoji[i] || i+1}</div>
+                <div className="rank-avatar" style={{ background: playerColorMap[p.id] }}>{p.name[0]}</div>
+                <div className="rank-info">
+                  <div className="rank-name">{p.name}{p.hc ? <span style={{fontSize:11,color:"#aaa",fontWeight:400,marginLeft:4}}>H{p.hc}</span> : null}</div>
+                  <div className="rank-detail">{p.strokes}타 · {overPar >= 0 ? "+" : ""}{overPar} 오버</div>
+                </div>
+                <div className="rank-amount">
+                  <div className={`rank-money ${p.earnings>0?"plus":p.earnings<0?"minus":"zero"}`}>{fmt(p.earnings)}</div>
+                  <div className="rank-wins">{p.wins}홀 승</div>
+                </div>
               </div>
-              <div className="rank-amount">
-                <div className={`rank-money ${p.earnings>0?"plus":p.earnings<0?"minus":"zero"}`}>{fmt(p.earnings)}</div>
-                <div className="rank-wins">{p.wins}홀 승</div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* ④ HoleTimeline */}
+        {/* ④ HoleTimeline — 전체 18홀 표시 */}
         <div className="result-card">
-          <div className="result-card-header">⛳ 홀별 결과</div>
+          <div className="result-card-header">⛳ 홀별 결과 (전체 18홀)</div>
           <div className="hole-timeline">
-            {holeResults.slice(0,9).map((hr, i) => {
+            {holeResults.map((hr, i) => {
               if (!hr) return null;
               const winP = hr.winnerId ? players.find(p=>p.id===hr.winnerId) : null;
-              const winColor = winP ? colorFor(winP.id) : "#ccc";
+              const winColor = winP ? playerColorMap[winP.id] : "#ccc";
               return (
                 <div className="hole-timeline-row" key={i}>
                   <div className={`ht-num ${hr.tie?"tie":""}`}>{i+1}</div>
@@ -1019,7 +1125,7 @@ function Screen4Results({ match, onBack, onNewMatch }) {
                   <div className="ht-scores">
                     {hr.scores.map(s => {
                       const pp = players.find(p=>p.id===s.id);
-                      const c = colorFor(s.id);
+                      const c = playerColorMap[s.id] || "#aaa";
                       return (
                         <span key={s.id} className="ht-score-badge" style={{ background:c+"18", color:c }}>
                           {pp?.name[0]}{s.s}
@@ -1030,22 +1136,26 @@ function Screen4Results({ match, onBack, onNewMatch }) {
                 </div>
               );
             })}
-            <div style={{ padding:"8px 16px", fontSize:11, color:"#bbb", textAlign:"center" }}>— 전반 9홀 표시 중 —</div>
           </div>
         </div>
 
-        {/* ⑤ PaymentSummary */}
+        {/* ⑤ PaymentSummary — 최소 거래 정산 알고리즘 */}
         <div className="result-card">
           <div className="result-card-header">💸 정산 요약</div>
           <div style={{ padding:"12px 16px", display:"flex", flexDirection:"column", gap:8 }}>
-            {summary.filter(p=>p.earnings<0).map(loser => {
-              const losee = summary.find(p=>p.earnings>0);
+            {settlements.length === 0 ? (
+              <div style={{ fontSize:13, color:"#aaa", textAlign:"center" }}>정산 없음 (모두 동점)</div>
+            ) : settlements.map((tx, idx) => {
+              const fromColor = playerColorMap[tx.from.id] || COLORS[0];
+              const toColor   = playerColorMap[tx.to.id]   || COLORS[1];
               return (
-                <div key={loser.id} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13 }}>
-                  <span style={{ fontWeight:700, color: colorFor(loser.id) }}>{loser.name}</span>
+                <div key={idx} style={{ display:"flex", alignItems:"center", gap:8, fontSize:13 }}>
+                  <span style={{ fontWeight:700, color: fromColor }}>{tx.from.name}</span>
                   <span style={{ color:"#ccc" }}>→</span>
-                  <span style={{ fontWeight:700, color: colorFor(losee?.id||"p1") }}>{losee?.name}</span>
-                  <span style={{ marginLeft:"auto", fontWeight:900, color:COLORS[0], fontFamily:"'Bebas Neue'" }}>{Math.abs(loser.earnings).toLocaleString()}원</span>
+                  <span style={{ fontWeight:700, color: toColor }}>{tx.to.name}</span>
+                  <span style={{ marginLeft:"auto", fontWeight:900, color:toColor, fontFamily:"'Bebas Neue'" }}>
+                    {tx.amt.toLocaleString()}원
+                  </span>
                 </div>
               );
             })}
@@ -1067,9 +1177,31 @@ function Screen4Results({ match, onBack, onNewMatch }) {
 // ─────────────────────────────────────────────
 // ROOT APP
 // ─────────────────────────────────────────────
+const LS_KEY = "taDangJeongsan_scores";
+
+function loadScoresFromLS(matchId) {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all[matchId] || null;
+  } catch { return null; }
+}
+
+function saveScoresToLS(matchId, scores) {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[matchId] = scores;
+    localStorage.setItem(LS_KEY, JSON.stringify(all));
+  } catch { /* 저장 실패 (용량 초과 등) 무시 */ }
+}
+
 export default function App() {
   const [screen, setScreen] = useState("main");
   const [activeMatch, setActiveMatch] = useState(null);
+  // scores를 App 레벨에서 관리하여 Screen3 ↔ Screen4 간 공유
+  const [matchScores, setMatchScores] = useState({});
 
   useEffect(() => {
     const style = document.createElement("style");
@@ -1078,9 +1210,37 @@ export default function App() {
     return () => document.head.removeChild(style);
   }, []);
 
+  // matchScores 변경 시 localStorage 자동 저장
+  useEffect(() => {
+    if (activeMatch && Object.keys(matchScores).length > 0) {
+      saveScoresToLS(activeMatch.id, matchScores);
+    }
+  }, [matchScores, activeMatch]);
+
   const handleSelectMatch = (m) => {
     setActiveMatch(m);
+    // localStorage에 저장된 스코어 복원 시도
+    const saved = loadScoresFromLS(m.id);
+    if (saved) {
+      setMatchScores(saved);
+    } else if (m.scores && Object.keys(m.scores).length > 0) {
+      setMatchScores(m.scores);
+    } else {
+      // 새 빈 스코어 초기화
+      setMatchScores(
+        Object.fromEntries((m.players || SAMPLE_PLAYERS).map(p => [p.id, new Array(18).fill(0)]))
+      );
+    }
     setScreen(m.done ? "results" : "score");
+  };
+
+  const handleStartMatch = (m) => {
+    setActiveMatch(m);
+    // 새 경기는 모두 0(미입력)으로 초기화
+    setMatchScores(
+      Object.fromEntries(m.players.map(p => [p.id, new Array(18).fill(0)]))
+    );
+    setScreen("score");
   };
 
   const TAB_LABELS = { main:"메인", create:"경기생성", score:"스코어", results:"결과" };
@@ -1094,13 +1254,24 @@ export default function App() {
             <Screen1Main onNew={() => setScreen("create")} onSelect={handleSelectMatch} />
           )}
           {screen === "create" && (
-            <Screen2Create onBack={() => setScreen("main")} onStart={m => { setActiveMatch(m); setScreen("score"); }} />
+            <Screen2Create onBack={() => setScreen("main")} onStart={handleStartMatch} />
           )}
           {screen === "score" && (
-            <Screen3Score match={activeMatch} onBack={() => setScreen("main")} onFinish={() => setScreen("results")} />
+            <Screen3Score
+              match={activeMatch}
+              scores={matchScores}
+              onScoreChange={setMatchScores}
+              onBack={() => setScreen("main")}
+              onFinish={() => setScreen("results")}
+            />
           )}
           {screen === "results" && (
-            <Screen4Results match={activeMatch} onBack={() => setScreen("main")} onNewMatch={() => setScreen("create")} />
+            <Screen4Results
+              match={activeMatch}
+              scores={matchScores}
+              onBack={() => setScreen("main")}
+              onNewMatch={() => setScreen("create")}
+            />
           )}
         </div>
       </div>

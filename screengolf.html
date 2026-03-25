@@ -815,19 +815,20 @@ function calcHoleResults(match) {
     const winners = holeScores.filter(s => s.score === minScore);
 
     if (mode === 'skin') {
-      // 스킨 방식: 단독 우승 시 팟 획득, 타이면 다음 홀로 이월
-      skinPot += base * multiplier;
+      // 스킨 방식: 참여자 수 × 기본금액씩 팟 적립, 단독 우승 시 팟 전체 획득
+      const prevPot = skinPot;
+      skinPot += base * multiplier * holeScores.length; // 각 참여자가 base씩 기여
       if (winners.length === 1) {
-        const loseAmt = skinPot / holeScores.length;
+        const share = skinPot / holeScores.length; // 1인당 기여분
         const amounts = {};
         holeScores.forEach(s => {
-          amounts[s.pid] = s.pid === winners[0].pid ? skinPot - loseAmt : -loseAmt;
+          amounts[s.pid] = s.pid === winners[0].pid ? skinPot - share : -share;
         });
-        results.push({ hole: h+1, winnerId: winners[0].pid, scores: holeScores, amounts, carried: skinPot - base * multiplier, multiplier });
+        results.push({ hole: h+1, winnerId: winners[0].pid, scores: holeScores, amounts, carried: prevPot, multiplier });
         skinPot = 0;
       } else {
         // 타이: 이월
-        results.push({ hole: h+1, winnerId: null, tie: true, scores: holeScores, amounts: {}, carried: skinPot - base * multiplier, multiplier });
+        results.push({ hole: h+1, winnerId: null, tie: true, scores: holeScores, amounts: {}, carried: prevPot, multiplier });
       }
     } else {
       // 타수 차이 방식: 각 타수 차이 × base × multiplier
@@ -872,7 +873,7 @@ function calcSettlements(players, totals) {
   return txns;
 }
 
-/** 플레이어별 합계 */
+/** 플레이어별 합계 — calcHoleResults 재호출 없이 결과 재사용 */
 function calcPlayerTotals(match) {
   const { holeResults } = calcHoleResults(match);
   const totals = {};
@@ -880,36 +881,60 @@ function calcPlayerTotals(match) {
 
   holeResults.forEach(hr => {
     match.playerIds.forEach(pid => {
-      if(hr.amounts[pid]) totals[pid].amount += hr.amounts[pid];
-      if(hr.winnerId === pid) totals[pid].wins += 1;
-      const sc = match.scores?.[pid]?.[hr.hole-1];
-      if(sc !== '' && sc !== null && sc !== undefined) totals[pid].score += Number(sc);
+      if (hr.amounts[pid] !== undefined) totals[pid].amount += hr.amounts[pid];
+      if (hr.winnerId === pid) totals[pid].wins += 1;
+      const sc = match.scores?.[pid]?.[hr.hole - 1];
+      // null/undefined/빈문자열이 아닌 경우만 타수 합산
+      if (sc !== null && sc !== undefined && sc !== '') totals[pid].score += Number(sc);
     });
   });
   return totals;
 }
 
-/** 18홀 입력 완료 여부 */
+/** 18홀 입력 완료 여부 — null이 아닌 실제 입력값 18개 필요 */
 function isMatchComplete(match) {
   if(!match.scores) return false;
   return match.playerIds.every(pid => {
     const sc = match.scores[pid];
-    return sc && sc.filter(s => s !== null && s !== '' && s > 0).length === 18;
+    // null/undefined/빈문자열이 하나도 없고 모두 양수여야 완료
+    return sc && sc.length === 18 &&
+      sc.every(s => s !== null && s !== undefined && s !== '' && Number(s) > 0);
   });
 }
 
-/** 파에서 조정된 홀 수 (진행률용) */
+/**
+ * 스코어가 없는 홀만 null로 초기화 (par 자동채움 금지)
+ * renderScorecard에서 분리하여 사이드이펙트 제거
+ */
+function ensureScoresInitialized(match) {
+  if (!match.scores) match.scores = {};
+  let changed = false;
+  match.playerIds.forEach(pid => {
+    if (!match.scores[pid]) {
+      match.scores[pid] = new Array(18).fill(null); // par 아닌 null
+      changed = true;
+    } else {
+      // 길이 보정만 (기존 값 유지)
+      while (match.scores[pid].length < 18) {
+        match.scores[pid].push(null);
+        changed = true;
+      }
+    }
+  });
+  if (changed) saveState();
+}
+
+/** 실제 스코어가 입력된 홀 수 (null이 아닌 값 기준) */
 function countEnteredHoles(match) {
   if(!match.scores || !match.playerIds.length) return 0;
-  // 어느 한 플레이어라도 파와 다른 타수를 기록한 홀 수
   let count = 0;
   for (let hi = 0; hi < 18; hi++) {
-    const par = state.settings.par[hi];
-    const adjusted = match.playerIds.some(pid => {
+    // 어느 한 플레이어라도 null/undefined/빈문자열이 아닌 값이 있으면 입력된 홀
+    const anyEntered = match.playerIds.some(pid => {
       const sc = match.scores[pid]?.[hi];
-      return sc !== '' && sc !== null && sc !== undefined && Number(sc) !== par;
+      return sc !== null && sc !== undefined && sc !== '';
     });
-    if (adjusted) count++;
+    if (anyEntered) count++;
   }
   return count;
 }
@@ -1077,31 +1102,30 @@ function renderScorecard() {
   hdr.innerHTML = `
     <button class="btn btn-primary btn-sm" onclick="saveScores()">💾 저장</button>`;
 
-  // 기존 경기 빈 홀 파로 보완
-  players.forEach(p => {
-    if (!match.scores[p.id]) match.scores[p.id] = [...state.settings.par];
-    else match.scores[p.id] = match.scores[p.id].map((sc, hi) =>
-      (sc === '' || sc === null || sc === undefined) ? state.settings.par[hi] : sc
-    );
-  });
-  saveState();
+  // null 초기화만 수행 (par 자동채움 금지 — 사이드이펙트 제거)
+  ensureScoresInitialized(match);
 
   // 각 플레이어 행 렌더
   const playerRows = players.map((p, pi) => {
     const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
-    const scores = match.scores[p.id];
-    const front9 = scores.slice(0,9).reduce((s, v) => s + Number(v), 0);
-    const back9  = scores.slice(9,18).reduce((s, v) => s + Number(v), 0);
+    const rawScores = match.scores[p.id];
+    // 표시용: null이면 par를 fallback으로 보여주되 저장하지 않음
+    const displayScores = rawScores.map((sc, hi) =>
+      (sc !== null && sc !== undefined && sc !== '') ? sc : state.settings.par[hi]
+    );
+    const front9 = rawScores.slice(0,9).reduce((s, v) => s + (v !== null && v !== '' ? Number(v) : 0), 0);
+    const back9  = rawScores.slice(9,18).reduce((s, v) => s + (v !== null && v !== '' ? Number(v) : 0), 0);
     const total  = front9 + back9;
 
-    const cells = scores.map((sc, hi) => {
+    const cells = rawScores.map((sc, hi) => {
       const par = state.settings.par[hi];
-      const isDefault = Number(sc) === par;
+      const displayVal = (sc !== null && sc !== undefined && sc !== '') ? sc : par;
+      const isDefault = sc === null || sc === undefined || sc === ''; // 미입력 상태
       return `<td class="score-input-cell">
         <div class="score-stepper">
           <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
           <div class="score-stepper-val" id="sc_${p.id}_${hi}"
-            style="color:${COLOR_HEX[ci]};opacity:${isDefault ? '0.45' : '1'};font-weight:${isDefault ? '400' : '700'}">${sc}</div>
+            style="color:${COLOR_HEX[ci]};opacity:${isDefault ? '0.4' : '1'};font-weight:${isDefault ? '400' : '700'}">${displayVal}</div>
           <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
         </div>
       </td>`;
@@ -1210,8 +1234,18 @@ function renderResults() {
   if(!match) { state.activeMatchId = null; renderResults(); return; }
 
   const players = match.playerIds.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
+  // calcHoleResults를 한 번만 호출하고 totals는 결과를 재사용해 직접 계산
   const { holeResults, remainingSkinPot } = calcHoleResults(match);
-  const totals = calcPlayerTotals(match);
+  const totals = {};
+  match.playerIds.forEach(pid => { totals[pid] = { amount: 0, wins: 0, score: 0 }; });
+  holeResults.forEach(hr => {
+    match.playerIds.forEach(pid => {
+      if (hr.amounts[pid] !== undefined) totals[pid].amount += hr.amounts[pid];
+      if (hr.winnerId === pid) totals[pid].wins += 1;
+      const sc = match.scores?.[pid]?.[hr.hole - 1];
+      if (sc !== null && sc !== undefined && sc !== '') totals[pid].score += Number(sc);
+    });
+  });
   const mode = match.bettingRule?.mode || state.settings.betMode;
   const base = match.bettingRule?.baseAmount || state.settings.baseAmount;
   const entered = countEnteredHoles(match);
@@ -1317,7 +1351,7 @@ function renderResults() {
             <div class="hole-num">${hr.hole}</div>
             <div style="flex:1">
               <div style="font-size:12px;margin-bottom:4px">
-                ${hr.tie ? '<span style="color:var(--text-light)">⚖️ 타이 ${mode==="skin"?"(이월)":"(무승부)"}</span>' :
+                ${hr.tie ? `<span style="color:var(--text-light)">⚖️ 타이 ${mode === 'skin' ? '(이월)' : '(무승부)'}</span>` :
                   winner ? `<span style="color:${COLOR_HEX[winnerCi]};font-weight:700">🏆 ${winner.name}</span>` : '<span style="color:var(--text-light)">미입력</span>'}
                 ${hr.carried > 0 ? `<span style="font-size:11px;color:var(--gold);margin-left:4px">팟 ${hr.carried.toLocaleString()}↑</span>` : ''}
               </div>
@@ -1391,7 +1425,7 @@ function renderSettings() {
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid var(--cream-dark)">
         <span style="font-size:13px;color:var(--text-mid)">총 파</span>
-        <span style="font-family:'Black Han Sans',sans-serif;font-size:16px;color:var(--green-dark)">${s.par.reduce((a,b)=>a+b,0)}</span>
+        <span id="parTotalDisplay" style="font-family:'Black Han Sans',sans-serif;font-size:16px;color:var(--green-dark)">${s.par.reduce((a,b)=>a+b,0)}</span>
       </div>
     </div>
 
@@ -1422,7 +1456,7 @@ function renderSettings() {
     </div>
 
     <div style="text-align:center;padding:20px;color:var(--text-light);font-size:11px">
-      스크린골프 정산 앱 v1.0<br>데이터는 이 기기에만 저장됩니다
+      스크린골프 정산 앱 ${APP_VERSION}<br>데이터는 이 기기에만 저장됩니다
     </div>`;
 }
 
@@ -1448,23 +1482,21 @@ function adjustScore(pid, hi, delta) {
   const match = state.matches.find(m => m.id === state.activeMatchId);
   if (!match) return;
   const current = match.scores?.[pid]?.[hi];
-  const base = (current !== '' && current !== null && current !== undefined) ? Number(current) : state.settings.par[hi];
-  const newVal = Math.max(1, base + delta);
+  const base = (current !== null && current !== undefined && current !== '') ? Number(current) : state.settings.par[hi];
+  const newVal = Math.max(1, Math.min(20, base + delta)); // 1~20 범위 제한
   if (!match.scores) match.scores = {};
   if (!match.scores[pid]) match.scores[pid] = new Array(18).fill('');
   match.scores[pid][hi] = newVal;
   saveState();
 
-  // 스코어 셀 업데이트
+  // 스코어 셀 업데이트 — 조정 후에는 항상 실제 입력값이므로 불투명하게 표시
   const ci = state.players.findIndex(p => p.id === pid) % 4;
   const valEl = document.getElementById(`sc_${pid}_${hi}`);
   if (valEl) {
-    const par = state.settings.par[hi];
-    const isDefault = newVal === par;
     valEl.textContent = newVal;
     valEl.style.color = COLOR_HEX[ci];
-    valEl.style.opacity = isDefault ? '0.45' : '1';
-    valEl.style.fontWeight = isDefault ? '400' : '700';
+    valEl.style.opacity = '1';    // 조정 후 = 실제 입력, 항상 불투명
+    valEl.style.fontWeight = '700';
   }
 
   // 행 합계 업데이트
@@ -1532,10 +1564,11 @@ function adjustAmount(delta) {
 function setPar(idx, val) {
   state.settings.par[idx] = Number(val);
   saveState();
-  // 파 합계만 업데이트
+  // 총 파 합계 표시 업데이트 (설정 탭 내 총파 숫자 요소)
   const total = state.settings.par.reduce((a,b)=>a+b,0);
-  const el = document.querySelector('.stepper-val');
-  // 재렌더 없이 총파만 업데이트
+  // 설정 탭의 총파 표시 요소를 ID로 특정하여 업데이트
+  const totalEl = document.getElementById('parTotalDisplay');
+  if (totalEl) totalEl.textContent = total;
 }
 
 function deletePlayer(id) {
@@ -1845,7 +1878,7 @@ function createMatch() {
     done: false
   };
 
-  selectedPlayers.forEach(pid => { match.scores[pid] = [...state.settings.par]; });
+  selectedPlayers.forEach(pid => { match.scores[pid] = new Array(18).fill(null); }); // null = 미입력
   state.matches.push(match);
   state.activeMatchId = match.id;
   selectedPlayers = [];
@@ -1903,7 +1936,9 @@ function uid() {
 
 function formatDate(d) {
   if(!d) return '';
-  const dt = new Date(d);
+  // "YYYY-MM-DD" 문자열을 UTC 기준으로 파싱하면 한국(UTC+9)에서 전날로 표시됨
+  // 로컬 자정으로 파싱하기 위해 T00:00:00 suffix 추가
+  const dt = new Date(d.includes('T') ? d : d + 'T00:00:00');
   return `${dt.getFullYear()}년 ${dt.getMonth()+1}월 ${dt.getDate()}일`;
 }
 
@@ -1940,9 +1975,9 @@ if(!state.players.length && !state.matches.length) {
     date: new Date().toISOString().split('T')[0],
     course: '파인밸리 CC',
     playerIds: ['p1','p2','p3','p4'],
-    bettingRule: { mode: 'diff', baseAmount: 1000 },
+    bettingRule: { mode: 'diff', baseAmount: 1000, birdieBonus: false, doubleParBonus: false, birdieExempt: [], doubleParExempt: [] },
     scores: sampleScores,
-    done: false
+    done: true  // 샘플은 18홀 완료 상태
   }];
 
   state.activeMatchId = 'm1';
