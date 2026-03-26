@@ -1170,7 +1170,7 @@ function renderMatchCard(m) {
   const playerChips = players.map((p) => {
     const hex = playerColor(p.id);
     const hc = m.handicaps?.[p.id] ?? p.handicap;
-    return `<span class="player-chip unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px;background:${hex}1e;border-color:${hex};color:${hex}">${p.name}${hc ? ` (H${hc})` : ''}</span>`;
+    return `<span class="player-chip unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px;background:${hex}1e;border-color:${hex};color:${hex}">${p.name}${hc ? ` (H${Number(hc).toFixed(1)})` : ''}</span>`;
   }).join('');
 
   return `
@@ -1534,7 +1534,7 @@ function renderResults() {
               ${t.wins > 0 ? `<span class="badge badge-gold">${t.wins}홀 승</span>` : ''}
             </div>
             <div class="result-player-score">
-              ${(() => { const hc = match.handicaps?.[p.id] ?? p.handicap; return `총 ${t.score || '-'}타${hc ? ` (넷 ${(t.score||0) - hc}타)` : ''}`; })()}
+              ${(() => { const hc = match.handicaps?.[p.id] ?? p.handicap; return `총 ${t.score || '-'}타${hc ? ` (넷 ${((t.score||0) - hc).toFixed(1)}타)` : ''}`; })()}
             </div>
           </div>
           ${mode !== 'friendly' ? `<div class="result-amount ${t.amount > 0 ? 'amount-plus' : t.amount < 0 ? 'amount-minus' : 'amount-zero'}">${t.amount > 0 ? '+' : ''}${t.amount.toLocaleString()}원</div>` : ''}
