@@ -1428,10 +1428,10 @@ function renderResults() {
       </div>` : ''}
 
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin-bottom:10px">${mode === 'friendly' ? '🏆 순위' : '💰 정산 결과'}</div>
-    ${byMoney.map((p, i) => {
+    ${ranked.map((p, i) => {
       const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
       const t = totals[p.id] || { amount: 0, wins: 0, score: 0 };
-      const rankIdx = ranked.findIndex(r => r.id === p.id);
+      const rankIdx = i;
       return `
         <div class="result-player-card">
           <div class="result-rank ${rankIdx < 3 ? `rank-${rankIdx+1}` : ''}">${rankNums[rankIdx] || rankIdx+1}</div>
