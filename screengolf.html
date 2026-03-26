@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.9.3';
+const APP_VERSION = 'v1.9.4';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1233,6 +1233,8 @@ function renderScorecard() {
 
     ${playerRows}
 
+    <div id="settlementPanel" style="display:none"></div>
+
     <div class="hole-action-bar">
       <button class="btn btn-primary btn-full" style="flex:1" onclick="saveScores()">💾 저장</button>
       ${hi < 17
@@ -1628,6 +1630,46 @@ function updateScore(pid, holeIdx, val) {
 function saveScores() {
   saveState();
   showToast('✅ 스코어 저장 완료!');
+
+  const panel = document.getElementById('settlementPanel');
+  if (!panel) return;
+
+  const match = state.matches.find(m => m.id === state.activeMatchId);
+  if (!match) return;
+
+  const players = match.playerIds.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
+  const totals = calcPlayerTotals(match);
+  const txns = calcSettlements(players, totals);
+
+  const entered = countEnteredHoles(match);
+  const subtitle = `${entered}홀 기준 중간정산`;
+
+  if (txns.length === 0) {
+    panel.innerHTML = `
+      <div style="background:white;border-radius:12px;padding:14px 16px;margin:10px 0 4px;border:1.5px solid #e8f5e9">
+        <div style="font-weight:700;font-size:13px;color:var(--green-dark);margin-bottom:6px">💰 정산 현황 <span style="font-weight:400;font-size:11px;color:var(--text-light)">(${subtitle})</span></div>
+        <div style="color:var(--text-light);font-size:13px;text-align:center;padding:6px 0">현재까지 정산 없음 (동점)</div>
+      </div>`;
+  } else {
+    const rows = txns.map(t => {
+      const ci_from = state.players.findIndex(p => p.id === t.from.id) % 4;
+      const ci_to   = state.players.findIndex(p => p.id === t.to.id)   % 4;
+      return `
+        <div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid #f4f4f4">
+          <span style="font-size:13px;font-weight:700;color:${COLOR_HEX[ci_from]}">${t.from.name}</span>
+          <span style="color:var(--text-light);font-size:13px">→</span>
+          <span style="font-size:13px;font-weight:700;color:${COLOR_HEX[ci_to]}">${t.to.name}</span>
+          <span style="margin-left:auto;font-size:14px;font-weight:800;color:var(--green-dark)">${t.amt.toLocaleString()}원</span>
+        </div>`;
+    }).join('');
+    panel.innerHTML = `
+      <div style="background:white;border-radius:12px;padding:14px 16px;margin:10px 0 4px;border:1.5px solid #e8f5e9">
+        <div style="font-weight:700;font-size:13px;color:var(--green-dark);margin-bottom:8px">💰 정산 현황 <span style="font-weight:400;font-size:11px;color:var(--text-light)">(${subtitle})</span></div>
+        ${rows}
+      </div>`;
+  }
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function setSetting(key, val) {
