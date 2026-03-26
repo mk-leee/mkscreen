@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.9.0';
+const APP_VERSION = 'v1.9.1';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -863,7 +863,7 @@ function calcHoleMultiplier(match, h, holeScores) {
   const birdieExempt = match.bettingRule?.birdieExempt ?? [];
   const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
   let mult = 1;
-  if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par - 1)) mult++;
+  if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score <= par - 1)) mult++;
   if (doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par * 2)) mult++;
   return mult; // 최대 3배 (1 + 1 + 1)
 }
@@ -1604,7 +1604,7 @@ function adjustScore(pid, hi, delta) {
     const birdieExempt = match.bettingRule?.birdieExempt ?? [];
     const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
     let mult = 1;
-    if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par_h - 1)) mult++;
+    if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score <= par_h - 1)) mult++;
     if (match.bettingRule?.doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par_h * 2)) mult++;
     const mc2 = document.getElementById('holeMultBadge');
     if (mc2) {
