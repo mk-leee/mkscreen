@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.4';
+const APP_VERSION = 'v2.1.5';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1426,6 +1426,52 @@ function renderResults() {
         <span>🎯 미확정 스킨팟</span>
         <span>${remainingSkinPot.toLocaleString()}원</span>
       </div>` : ''}
+
+    <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin-bottom:10px">🏌️ 홀별 스코어</div>
+    <div style="overflow-x:auto;margin-bottom:20px;border-radius:10px;border:1px solid #e0e0e0">
+      <table style="border-collapse:collapse;min-width:100%;font-size:12px;white-space:nowrap">
+        <thead>
+          <tr style="background:var(--green-dark);color:white">
+            <td style="padding:7px 10px;font-weight:700;position:sticky;left:0;background:var(--green-dark);z-index:1">HOLE</td>
+            ${state.settings.par.map((_, h) => `<td style="padding:7px 7px;text-align:center;font-weight:700">${h+1}</td>`).join('')}
+            <td style="padding:7px 8px;text-align:center;font-weight:700">T</td>
+          </tr>
+          <tr style="background:#f5f5f5">
+            <td style="padding:6px 10px;font-weight:600;color:var(--text-mid);position:sticky;left:0;background:#f5f5f5;z-index:1">Par</td>
+            ${state.settings.par.map(p => `<td style="padding:6px 7px;text-align:center;color:var(--text-mid)">${p}</td>`).join('')}
+            <td style="padding:6px 8px;text-align:center;font-weight:700;color:var(--text-mid)">${state.settings.par.reduce((s,p)=>s+p,0)}</td>
+          </tr>
+        </thead>
+        <tbody>
+          ${players.map((p, pi) => {
+            const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
+            let total = 0;
+            const cells = state.settings.par.map((par, h) => {
+              const sc = match.scores?.[p.id]?.[h];
+              const v = (sc !== null && sc !== undefined && sc !== '') ? Number(sc) : null;
+              if (v) total += v;
+              const diff = v !== null ? v - par : null;
+              let bg = 'transparent', color = 'var(--text-dark)', fw = '400', border = '';
+              if (diff !== null) {
+                if (diff <= -2)      { bg='#e8f4fd'; color='#1565c0'; fw='700'; border='2px solid #1565c0'; }
+                else if (diff === -1){ bg='#e8f4fd'; color='#2980b9'; fw='700'; border='1px solid #2980b9'; }
+                else if (diff === 0) { color='var(--text-mid)'; }
+                else if (diff === 1) { color='#c0392b'; }
+                else                 { bg='#fdecea'; color='#c0392b'; fw='700'; }
+              }
+              return `<td style="padding:6px 7px;text-align:center">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:${diff !== null && diff <= -1 ? '50%' : '3px'};background:${bg};color:${color};font-weight:${fw};border:${border};font-size:12px">${v ?? '-'}</span>
+              </td>`;
+            }).join('');
+            return `<tr style="border-top:1px solid #eee;background:${pi%2===0?'white':'#fafafa'}">
+              <td style="padding:6px 10px;font-weight:700;color:${COLOR_HEX[ci]};position:sticky;left:0;background:${pi%2===0?'white':'#fafafa'};z-index:1">${p.name}</td>
+              ${cells}
+              <td style="padding:6px 8px;text-align:center;font-weight:800;font-size:13px">${total||'-'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
 
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin-bottom:10px">${mode === 'friendly' ? '🏆 순위' : '💰 정산 결과'}</div>
     ${ranked.map((p, i) => {
