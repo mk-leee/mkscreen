@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.0.8';
+const APP_VERSION = 'v2.0.9';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -870,7 +870,7 @@ function calcHoleMultiplier(match, h, holeScores) {
 }
 
 /** 페어별 배율: 주는 사람 기준으로 예외 적용 */
-function calcPairMultiplier(match, h, payerPid, payerScore, receiverScore, usedAllTieMult = 1) {
+function calcPairMultiplier(match, h, payerPid, payerScore, receiverScore, usedAllTieMult = 1, recvPid = null) {
   const birdieBonus = match.bettingRule?.birdieBonus ?? false;
   const doubleParBonus = match.bettingRule?.doubleParBonus ?? false;
   const par = state.settings.par[h];
@@ -883,8 +883,8 @@ function calcPairMultiplier(match, h, payerPid, payerScore, receiverScore, usedA
   // 더블파: 주는 쪽이 더블파, 단 주는 쪽이 예외면 비적용
   if (doubleParBonus && payerScore >= par * 2 && !doubleParExempt.includes(payerPid)) bonusMult++;
   bonusMult = Math.min(bonusMult, 3);
-  // 올타이 캐리: 주는 쪽이 예외면 비적용
-  const allTieMult = (usedAllTieMult > 1 && !allTieExempt.includes(payerPid)) ? usedAllTieMult : 1;
+  // 올타이 캐리: 페어 중 한 명이라도 예외면 비적용
+  const allTieMult = (usedAllTieMult > 1 && !allTieExempt.includes(payerPid) && !(recvPid && allTieExempt.includes(recvPid))) ? usedAllTieMult : 1;
   return bonusMult * allTieMult;
 }
 
@@ -962,7 +962,7 @@ function calcHoleResults(match) {
           const { pid: pB, score: sB } = holeScores[b];
           if (sA === sB) continue;
           const [payerPid, payerScore, recvPid, recvScore] = sA > sB ? [pA, sA, pB, sB] : [pB, sB, pA, sA];
-          const pairMult = calcPairMultiplier(match, h, payerPid, payerScore, recvScore) * usedAllTieMult;
+          const pairMult = calcPairMultiplier(match, h, payerPid, payerScore, recvScore, usedAllTieMult, recvPid);
           const pay = Math.abs(sA - sB) * base * pairMult;
           amounts[payerPid] -= pay;
           amounts[recvPid]  += pay;
