@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.2';
+const APP_VERSION = 'v2.1.3';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1030,7 +1030,7 @@ function calcHandicapTxns(match) {
   if (mode === 'friendly') return [];
   const base = match.bettingRule?.baseAmount || state.settings.baseAmount;
   const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
-  const hcPlayers = players.map(p => ({ ...p, hc: Math.round(p.handicap || 0) }));
+  const hcPlayers = players.map(p => ({ ...p, hc: Math.round((match.handicaps?.[p.id] ?? p.handicap) || 0) }));
   const txns = [];
   for (let a = 0; a < hcPlayers.length; a++) {
     for (let b = a + 1; b < hcPlayers.length; b++) {
@@ -1146,7 +1146,8 @@ function renderMatchCard(m) {
   const base = m.bettingRule?.baseAmount || state.settings.baseAmount;
   const playerChips = players.map((p, i) => {
     const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
-    return `<span class="player-chip ${PLAYER_BG_COLORS[ci]} unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px">${p.name}${p.handicap ? ` (H${p.handicap})` : ''}</span>`;
+    const hc = m.handicaps?.[p.id] ?? p.handicap;
+    return `<span class="player-chip ${PLAYER_BG_COLORS[ci]} unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px">${p.name}${hc ? ` (H${hc})` : ''}</span>`;
   }).join('');
 
   return `
@@ -1437,7 +1438,7 @@ function renderResults() {
               ${t.wins > 0 ? `<span class="badge badge-gold">${t.wins}홀 승</span>` : ''}
             </div>
             <div class="result-player-score">
-              총 ${t.score || '-'}타${p.handicap ? ` (넷 ${(t.score||0) - p.handicap}타)` : ''}
+              ${(() => { const hc = match.handicaps?.[p.id] ?? p.handicap; return `총 ${t.score || '-'}타${hc ? ` (넷 ${(t.score||0) - hc}타)` : ''}`; })()}
             </div>
           </div>
           ${mode !== 'friendly' ? `<div class="result-amount ${t.amount > 0 ? 'amount-plus' : t.amount < 0 ? 'amount-minus' : 'amount-zero'}">${t.amount > 0 ? '+' : ''}${t.amount.toLocaleString()}원</div>` : ''}
@@ -1936,19 +1937,25 @@ function buildPlayerSelectList() {
   return state.players.map((p, i) => {
     const ci = i % 4;
     const isSelected = selectedPlayers.includes(p.id);
+    const hcVal = matchHandicaps[p.id] ?? (isSelected ? (p.handicap ?? '') : '');
     return `
       <label style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;cursor:pointer;transition:background 0.1s;background:${isSelected?'rgba(74,140,92,0.1)':''}" id="pLabel_${p.id}">
         <input type="checkbox" id="pCheck_${p.id}" onchange="togglePlayerSelect('${p.id}')" style="display:none">
         <div style="width:36px;height:36px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:15px">${p.name[0]}</div>
         <span style="font-weight:600">${p.name}</span>
-        ${p.handicap ? `<span style="font-size:11px;color:var(--text-light)">H${p.handicap}</span>` : ''}
         <span style="margin-left:auto;font-size:18px;display:${isSelected?'inline':'none'}" id="pCheck_icon_${p.id}">✓</span>
+        <input type="number" id="matchHc_${p.id}" placeholder="핸디" min="0" max="54" step="0.1"
+          value="${hcVal}"
+          style="width:62px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;display:${isSelected?'inline-block':'none'}"
+          onclick="event.stopPropagation()"
+          oninput="matchHandicaps['${p.id}']=this.value!==''?Number(this.value):null">
       </label>`;
   }).join('');
 }
 
 function openNewMatchModal() {
   selectedPlayers = [];
+  matchHandicaps = {};
   matchBetMode = state.settings.betMode;
   matchBirdieBonus = false;
   matchDoubleParBonus = false;
@@ -2091,6 +2098,7 @@ function attachSwipe(onLeft, onRight) {
 
 let selectedPlayers = [];
 let matchBetMode = state.settings.betMode;
+let matchHandicaps = {};       // 경기별 핸디캡 { pid: number }
 let matchBirdieBonus = false;
 let matchDoubleParBonus = false;
 let matchAllTieDouble = false;
@@ -2110,11 +2118,18 @@ function togglePlayerSelect(pid) {
     matchBirdieExempt = matchBirdieExempt.filter(id => id !== pid);
     matchDoubleParExempt = matchDoubleParExempt.filter(id => id !== pid);
     matchAllTieExempt = matchAllTieExempt.filter(id => id !== pid);
+    delete matchHandicaps[pid];
+    const hcEl = document.getElementById(`matchHc_${pid}`);
+    if (hcEl) hcEl.style.display = 'none';
   } else {
     if(selectedPlayers.length >= 4) { showToast('⚠️ 최대 4명까지 선택 가능합니다'); return; }
     selectedPlayers.push(pid);
     label.style.background = 'rgba(74,140,92,0.1)';
     if(icon) icon.style.display = 'inline';
+    const player = state.players.find(p => p.id === pid);
+    matchHandicaps[pid] = player?.handicap ?? null;
+    const hcEl = document.getElementById(`matchHc_${pid}`);
+    if (hcEl) { hcEl.value = matchHandicaps[pid] ?? ''; hcEl.style.display = 'inline-block'; }
   }
   refreshBonusExemptSection();
 }
@@ -2230,11 +2245,18 @@ function createMatch() {
   const date = document.getElementById('newMatchDate')?.value || new Date().toISOString().split('T')[0];
   const amount = Number(document.getElementById('newMatchAmount')?.value) || state.settings.baseAmount;
 
+  // 모달에서 입력된 핸디 읽기 (입력 필드에서 최신값 반영)
+  selectedPlayers.forEach(pid => {
+    const el = document.getElementById(`matchHc_${pid}`);
+    if (el) matchHandicaps[pid] = el.value !== '' ? Number(el.value) : null;
+  });
+
   const match = {
     id: uid(),
     date,
     course,
     playerIds: [...selectedPlayers],
+    handicaps: Object.fromEntries(selectedPlayers.map(pid => [pid, matchHandicaps[pid] ?? null])),
     bettingRule: { mode: matchBetMode, baseAmount: amount, birdieBonus: matchBirdieBonus, doubleParBonus: matchDoubleParBonus, allTieDouble: matchAllTieDouble, birdieExempt: [...matchBirdieExempt], doubleParExempt: [...matchDoubleParExempt], allTieExempt: [...matchAllTieExempt] },
     scores: {},
     done: false
@@ -2268,6 +2290,11 @@ function openEditMatchModal(id) {
   matchDoubleParExempt = [...(rule.doubleParExempt ?? [])];
   matchAllTieExempt = [...(rule.allTieExempt ?? [])];
   selectedPlayers = [...m.playerIds];
+  matchHandicaps = Object.fromEntries(m.playerIds.map(pid => {
+    const stored = m.handicaps?.[pid];
+    const player = state.players.find(p => p.id === pid);
+    return [pid, stored !== undefined ? stored : (player?.handicap ?? null)];
+  }));
 
   openModal(`
     <div class="modal-title">✏️ 경기 수정</div>
@@ -2313,6 +2340,22 @@ function openEditMatchModal(id) {
       <label class="input-label">참가자</label>
       <div id="bonusExemptSection" style="${(matchBirdieBonus||matchDoubleParBonus)?'':'display:none'};margin-top:0;padding:10px 12px;background:#fffbf0;border-radius:8px;border:1px solid rgba(212,168,67,0.3)"></div>
     </div>
+    <div class="input-group">
+      <label class="input-label">참가자 핸디캡</label>
+      ${m.playerIds.map(pid => {
+        const player = state.players.find(p => p.id === pid);
+        const hcVal = matchHandicaps[pid] ?? '';
+        const ci = state.players.findIndex(p => p.id === pid) % 4;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+          <div style="width:30px;height:30px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:13px;flex-shrink:0">${player?.name[0]||'?'}</div>
+          <span style="flex:1;font-weight:600;font-size:14px">${player?.name||'?'}</span>
+          <input type="number" id="matchHc_${pid}" placeholder="핸디" min="0" max="54" step="0.1"
+            value="${hcVal}"
+            style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center"
+            oninput="matchHandicaps['${pid}']=this.value!==''?Number(this.value):null">
+        </div>`;
+      }).join('')}
+    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-full" onclick="deleteMatchConfirm('${id}')"
         style="flex:1;background:#fef2f2;color:#c0392b;border:1.5px solid #c0392b;font-weight:700;padding:13px">
@@ -2334,8 +2377,15 @@ function saveMatchEdit() {
   const date = document.getElementById('editMatchDate')?.value || m.date;
   const amount = Number(document.getElementById('editMatchAmount')?.value) || (m.bettingRule?.baseAmount ?? state.settings.baseAmount);
 
+  // 핸디 입력값 최신화
+  m.playerIds.forEach(pid => {
+    const el = document.getElementById(`matchHc_${pid}`);
+    if (el) matchHandicaps[pid] = el.value !== '' ? Number(el.value) : null;
+  });
+
   m.course = course;
   m.date = date;
+  m.handicaps = Object.fromEntries(m.playerIds.map(pid => [pid, matchHandicaps[pid] ?? null]));
   m.bettingRule = {
     ...m.bettingRule,
     mode: matchBetMode,
