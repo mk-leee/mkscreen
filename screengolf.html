@@ -1209,11 +1209,6 @@ function renderPlayers() {
     ${state.players.map((p, i) => {
       const ci = i % 4;
       const pmatch = state.matches.filter(m => m.playerIds.includes(p.id));
-      const totalWon = pmatch.reduce((sum, m) => {
-        if(!m.scores) return sum;
-        const totals = calcPlayerTotals(m);
-        return sum + (totals[p.id]?.amount || 0);
-      }, 0);
       return `
         <div class="card" style="display:flex;align-items:center;gap:14px">
           <div style="width:44px;height:44px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:18px;flex-shrink:0">
@@ -1221,14 +1216,15 @@ function renderPlayers() {
           </div>
           <div style="flex:1">
             <div style="font-weight:700;font-size:16px">${p.name}</div>
-            <div style="font-size:12px;color:var(--text-light)">${p.handicap ? `핸디 ${p.handicap}타` : '핸디 없음'}</div>
-            <div style="font-size:12px;color:var(--text-light)">${pmatch.length}경기</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-family:'Black Han Sans',sans-serif;font-size:16px" class="${totalWon > 0 ? 'amount-plus' : totalWon < 0 ? 'amount-minus' : 'amount-zero'}">
-              ${totalWon > 0 ? '+' : ''}${totalWon.toLocaleString()}원
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <span style="font-size:12px;color:var(--text-light)">핸디</span>
+              <input type="number" min="0" max="54" step="0.1"
+                value="${p.handicap || 0}"
+                style="width:54px;padding:2px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;text-align:center"
+                onclick="event.stopPropagation()"
+                onchange="updatePlayerHandicap('${p.id}', this.value)">
+              <span style="font-size:12px;color:var(--text-light)">타 · ${pmatch.length}경기</span>
             </div>
-            <div style="font-size:11px;color:var(--text-light)">누적 수익</div>
           </div>
           <button class="btn btn-sm btn-outline" onclick="openEditPlayerModal('${p.id}')" style="margin-right:4px">수정</button>
           <button class="btn btn-sm btn-outline" onclick="deletePlayer('${p.id}')">삭제</button>
@@ -1903,6 +1899,13 @@ function setPar(idx, val) {
   const total = state.settings.par.reduce((a,b)=>a+b,0);
   const el = document.querySelector('.stepper-val');
   // 재렌더 없이 총파만 업데이트
+}
+
+function updatePlayerHandicap(id, val) {
+  const p = state.players.find(p => p.id === id);
+  if (!p) return;
+  p.handicap = val !== '' ? Number(val) : 0;
+  saveState();
 }
 
 function deletePlayer(id) {
