@@ -433,6 +433,83 @@
     line-height: 1.5;
     font-family: 'Noto Sans KR', sans-serif;
   }
+  /* ── 홀별 입력 모드 ── */
+  .hole-input-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .hole-nav-btn {
+    width: 44px; height: 44px;
+    border: none; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: white; font-size: 20px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hole-nav-btn:active { background: var(--gold); }
+  .hole-nav-btn:disabled { opacity: 0.25; pointer-events: none; }
+  .hole-number-display {
+    text-align: center;
+  }
+  .hole-number-display .hole-num-big {
+    font-family: 'Black Han Sans', sans-serif;
+    font-size: 38px; color: white; line-height: 1;
+  }
+  .hole-number-display .hole-par-label {
+    font-size: 13px; color: var(--gold-light); margin-top: 2px;
+  }
+  .hole-progress-dots {
+    display: flex; gap: 3px; justify-content: center; margin-bottom: 14px; flex-wrap: wrap; padding: 0 4px;
+  }
+  .hole-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    transition: background 0.15s;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hole-dot.adjusted { background: var(--gold); }
+  .hole-dot.current  { background: white; box-shadow: 0 0 0 2px var(--gold); }
+  .player-score-row {
+    background: white; border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .player-score-row .ps-info { flex: 1; min-width: 0; }
+  .player-score-row .ps-name {
+    font-weight: 700; font-size: 15px; color: var(--text-dark);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .player-score-row .ps-rel {
+    font-size: 12px; margin-top: 2px;
+  }
+  .big-stepper {
+    display: flex; align-items: center; gap: 0; flex-shrink: 0;
+  }
+  .big-stepper-btn {
+    width: 52px; height: 52px;
+    border: none; border-radius: 12px;
+    font-size: 26px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    background: var(--cream-dark); color: var(--text-mid);
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.1s, transform 0.08s;
+    user-select: none;
+  }
+  .big-stepper-btn:active { transform: scale(0.92); }
+  .big-stepper-val {
+    width: 56px; text-align: center;
+    font-size: 28px; font-weight: 900;
+    font-family: 'Black Han Sans', sans-serif;
+    line-height: 1;
+  }
+  .hole-action-bar {
+    display: flex; gap: 10px; margin-top: 4px;
+  }
   .score-winner { background: rgba(212,168,67,0.2) !important; }
   .score-cell {
     font-weight: 700;
@@ -742,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.8.1';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -750,15 +827,16 @@ const COLOR_HEX = ['#2ecc71','#3498db','#e74c3c','#9b59b6'];
 const PAR_DEFAULT = [4,4,3,4,5,3,4,5,4, 4,4,3,5,4,4,3,5,4]; // 파72 기본
 
 let state = loadState() || {
-  players: [],      // [{id, name, handicap}]
-  matches: [],      // [{id, date, course, playerIds, bettingRule, scores, done}]
+  players: [],
+  matches: [],
   settings: {
-    betMode: 'diff',   // 'diff' or 'skin'
+    betMode: 'diff',
     baseAmount: 1000,
     skinCarryover: true,
     par: [...PAR_DEFAULT]
   },
   activeMatchId: null,
+  activeHole: 0,        // 현재 입력 중인 홀 인덱스 (0-17)
   currentTab: 'matches'
 };
 
@@ -1072,12 +1150,10 @@ function renderScorecard() {
   if(!match) { state.activeMatchId = null; renderScorecard(); return; }
 
   const players = match.playerIds.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
-  const entered = countEnteredHoles(match);
 
-  hdr.innerHTML = `
-    <button class="btn btn-primary btn-sm" onclick="saveScores()">💾 저장</button>`;
+  hdr.innerHTML = `<button class="btn btn-gold btn-sm" onclick="switchTab('results')">💰 결과</button>`;
 
-  // 기존 경기 빈 홀 파로 보완
+  // 빈 홀 파로 보완
   players.forEach(p => {
     if (!match.scores[p.id]) match.scores[p.id] = [...state.settings.par];
     else match.scores[p.id] = match.scores[p.id].map((sc, hi) =>
@@ -1086,108 +1162,87 @@ function renderScorecard() {
   });
   saveState();
 
-  // 각 플레이어 행 렌더
-  const playerRows = players.map((p, pi) => {
-    const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
-    const scores = match.scores[p.id];
-    const front9 = scores.slice(0,9).reduce((s, v) => s + Number(v), 0);
-    const back9  = scores.slice(9,18).reduce((s, v) => s + Number(v), 0);
-    const total  = front9 + back9;
+  // 현재 홀 인덱스
+  if (state.activeHole == null) state.activeHole = 0;
+  const hi = Math.max(0, Math.min(17, state.activeHole));
+  const par = state.settings.par[hi];
 
-    const cells = scores.map((sc, hi) => {
-      const par = state.settings.par[hi];
-      const isDefault = Number(sc) === par;
-      return `<td class="score-input-cell">
-        <div class="score-stepper">
-          <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
-          <div class="score-stepper-val" id="sc_${p.id}_${hi}"
-            style="color:${COLOR_HEX[ci]};opacity:${isDefault ? '0.45' : '1'};font-weight:${isDefault ? '400' : '700'}">${sc}</div>
-          <button class="score-stepper-btn" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
-        </div>
-      </td>`;
-    }).join('');
-
-    return `
-      <tr>
-        <td class="player-name" style="border-left:3px solid ${COLOR_HEX[ci]}">
-          ${p.name}${p.handicap ? `<br><span style="font-size:10px;color:var(--text-light)">H${p.handicap}</span>` : ''}
-        </td>
-        ${cells}
-        <td class="total-col score-cell" id="row_front_${p.id}">${front9 || '-'}</td>
-        <td class="total-col score-cell" id="row_back_${p.id}">${back9 || '-'}</td>
-        <td class="total-col score-cell" id="row_tot_${p.id}" style="background:var(--cream-dark)">${total || '-'}</td>
-      </tr>`;
+  // 진행 점 (18개)
+  const dots = Array.from({length: 18}, (_, i) => {
+    const adjusted = players.some(p => Number(match.scores[p.id]?.[i]) !== state.settings.par[i]);
+    const isCur = i === hi;
+    return `<div class="hole-dot${adjusted?' adjusted':''}${isCur?' current':''}" onclick="goHole(${i})" title="${i+1}번"></div>`;
   }).join('');
 
-  // 파 행
-  const parRow = state.settings.par.map(p => `<td style="font-size:12px;color:var(--text-light);padding:6px 2px;text-align:center">${p}</td>`).join('');
-  const parFront = state.settings.par.slice(0,9).reduce((a,b)=>a+b,0);
-  const parBack = state.settings.par.slice(9).reduce((a,b)=>a+b,0);
-  const parTotal = parFront + parBack;
+  // 배율 계산
+  const birdieExempt = match.bettingRule?.birdieExempt ?? [];
+  const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
+  const holeScoresForMult = players.map(p => {
+    const sc = match.scores[p.id]?.[hi];
+    return { pid: p.id, score: Number(sc) };
+  });
+  let mult = 1;
+  if (match.bettingRule?.birdieBonus && holeScoresForMult.filter(s=>!birdieExempt.includes(s.pid)).some(s=>s.score===par-1)) mult++;
+  if (match.bettingRule?.doubleParBonus && holeScoresForMult.filter(s=>!doubleParExempt.includes(s.pid)).some(s=>s.score>=par*2)) mult++;
+  const multBadge = mult > 1
+    ? `<span id="holeMultBadge" style="font-size:12px;font-weight:700;color:${mult===3?'#c0392b':'var(--gold)'};background:${mult===3?'rgba(192,57,43,0.12)':'rgba(212,168,67,0.15)'};border-radius:6px;padding:2px 8px;margin-left:6px">×${mult}</span>`
+    : `<span id="holeMultBadge"></span>`;
 
-  // 배율 행 (버디/더블파 보너스 적용 시)
-  const hasBonusRule = match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus;
-  const multiplierRowHtml = hasBonusRule ? (() => {
-    const cells = Array.from({length: 18}, (_, hi) => {
-      const par = state.settings.par[hi];
-      const holeScores = players.map(p => {
-        const sc = match.scores?.[p.id]?.[hi];
-        return sc ? Number(sc) : null;
-      }).filter(s => s !== null && s > 0);
-      let mult = 1;
-      if (match.bettingRule?.birdieBonus && holeScores.some(s => s === par - 1)) mult++;
-      if (match.bettingRule?.doubleParBonus && holeScores.some(s => s >= par * 2)) mult++;
-      if (mult === 1) return `<td id="mult_cell_${hi}" style="padding:3px 2px;text-align:center"></td>`;
-      const color = mult === 3 ? '#c0392b' : '#d4a843';
-      return `<td id="mult_cell_${hi}" style="padding:3px 2px;text-align:center"><span style="font-size:10px;font-weight:700;color:${color};background:${color}22;border-radius:3px;padding:1px 3px">×${mult}</span></td>`;
-    }).join('');
-    return `<tr style="background:#fffbf0">
-      <td style="padding:4px 10px;font-size:10px;color:var(--gold);font-weight:700;position:sticky;left:0;background:#fffbf0">배율</td>
-      ${cells}
-      <td colspan="3"></td>
-    </tr>`;
-  })() : '';
+  // 플레이어별 입력 행
+  const playerRows = players.map(p => {
+    const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
+    const sc = Number(match.scores[p.id]?.[hi] ?? par);
+    const rel = sc - par;
+    const relLabel = rel === 0 ? `<span style="color:var(--text-light)">파</span>`
+      : rel < 0 ? `<span style="color:#2980b9;font-weight:700">${rel}</span>`
+      : `<span style="color:var(--red-light);font-weight:700">+${rel}</span>`;
+    const isDefault = sc === par;
+    return `
+      <div class="player-score-row">
+        <div style="width:42px;height:42px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:17px;flex-shrink:0">${p.name[0]}</div>
+        <div class="ps-info">
+          <div class="ps-name">${p.name}${p.handicap?`<span style="font-size:11px;color:var(--text-light);font-weight:400;margin-left:4px">H${p.handicap}</span>`:''}</div>
+          <div class="ps-rel" id="rel_${p.id}_${hi}">${relLabel}</div>
+        </div>
+        <div class="big-stepper">
+          <button class="big-stepper-btn" style="color:${COLOR_HEX[ci]};background:${COLOR_HEX[ci]}18" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
+          <div class="big-stepper-val" id="sc_${p.id}_${hi}" style="color:${isDefault?'var(--text-light)':COLOR_HEX[ci]}">${sc}</div>
+          <button class="big-stepper-btn" style="color:${COLOR_HEX[ci]};background:${COLOR_HEX[ci]}18" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
+        </div>
+      </div>`;
+  }).join('');
 
   mc.innerHTML = `
-    <div style="margin-bottom:12px">
-      <div style="font-family:'Black Han Sans',sans-serif;font-size:18px;color:var(--green-dark)">${match.course}</div>
-      <div style="font-size:12px;color:var(--text-light)">${formatDate(match.date)} · ${players.length}명</div>
-      <div style="margin-top:8px">
-        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:${(entered/18*100).toFixed(0)}%"></div></div>
-        <div id="progressText" style="font-size:11px;color:var(--text-light)">${entered > 0 ? `${entered}홀 조정됨` : '파 기본값으로 시작'}</div>
+    <div style="background:linear-gradient(160deg,var(--green-dark),var(--green-mid));border-radius:16px;padding:16px 16px 12px;margin-bottom:12px">
+      <div class="hole-input-header">
+        <button class="hole-nav-btn" onclick="goHole(${hi-1})" ${hi===0?'disabled':''}>‹</button>
+        <div class="hole-number-display">
+          <div class="hole-num-big">${hi+1}<span style="font-size:20px;opacity:0.5"> / 18</span></div>
+          <div class="hole-par-label">파 ${par}${multBadge}</div>
+        </div>
+        <button class="hole-nav-btn" onclick="goHole(${hi+1})" ${hi===17?'disabled':''}>›</button>
       </div>
+      <div class="hole-progress-dots">${dots}</div>
     </div>
 
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;box-shadow:var(--shadow);margin-bottom:12px">
-      <table class="scorecard">
-        <thead>
-          <tr>
-            <th class="player-col" style="text-align:left;padding-left:10px">플레이어</th>
-            ${Array.from({length:9},(_,i)=>`<th>${i+1}</th>`).join('')}
-            ${Array.from({length:9},(_,i)=>`<th>${i+10}</th>`).join('')}
-            <th>전반</th><th>후반</th><th>합계</th>
-          </tr>
-          <tr style="background:#f8f5ef">
-            <td style="padding:6px 10px;font-size:11px;color:var(--text-light);font-weight:600;position:sticky;left:0;background:#f8f5ef">파</td>
-            ${parRow}
-            <td style="text-align:center;font-size:12px;color:var(--text-light);padding:6px 2px">${parFront}</td>
-            <td style="text-align:center;font-size:12px;color:var(--text-light);padding:6px 2px">${parBack}</td>
-            <td style="text-align:center;font-size:12px;font-weight:700;color:var(--text-mid);padding:6px 2px;background:var(--cream-dark)">${parTotal}</td>
-          </tr>
-          ${multiplierRowHtml}
-        </thead>
-        <tbody>${playerRows}</tbody>
-      </table>
-    </div>
+    ${playerRows}
 
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-primary btn-full" onclick="saveScores()" style="flex:2">
-        💾 스코어 저장
-      </button>
-      <button class="btn btn-gold" onclick="switchTab('results')">
-        💰 결과 보기
-      </button>
+    <div class="hole-action-bar">
+      <button class="btn btn-primary btn-full" style="flex:1" onclick="saveScores()">💾 저장</button>
+      ${hi < 17
+        ? `<button class="btn btn-gold" style="flex:2;font-size:15px" onclick="saveAndNextHole()">다음 홀 ${hi+2}번 →</button>`
+        : `<button class="btn btn-gold" style="flex:2;font-size:15px" onclick="switchTab('results')">💰 결과 보기</button>`}
     </div>`;
+
+  // 스와이프 좌우로 홀 이동
+  let _tx = 0;
+  mc.addEventListener('touchstart', e => { _tx = e.touches[0].clientX; }, { passive: true });
+  mc.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - _tx;
+    if (Math.abs(dx) < 50) return;
+    if (dx < 0 && hi < 17) goHole(hi + 1);
+    else if (dx > 0 && hi > 0) goHole(hi - 1);
+  }, { passive: true });
 }
 
 // ---- 결과 탭 ----
@@ -1440,8 +1495,35 @@ function renderTab(tab) {
 
 function openMatch(id) {
   state.activeMatchId = id;
+  // 마지막으로 조정된 홀 다음으로 이동 (없으면 0번)
+  const match = state.matches.find(m => m.id === id);
+  if (match) {
+    let lastAdjusted = -1;
+    for (let hi = 0; hi < 18; hi++) {
+      const par = state.settings.par[hi];
+      const adjusted = match.playerIds.some(pid => Number(match.scores?.[pid]?.[hi]) !== par);
+      if (adjusted) lastAdjusted = hi;
+    }
+    state.activeHole = Math.min(17, lastAdjusted + 1);
+  } else {
+    state.activeHole = 0;
+  }
   state.currentTab = 'scorecard';
   render();
+}
+
+function goHole(hi) {
+  const idx = Math.max(0, Math.min(17, hi));
+  if (idx === state.activeHole) return;
+  state.activeHole = idx;
+  saveState();
+  renderScorecard();
+}
+
+function saveAndNextHole() {
+  saveState();
+  showToast('✅ 저장됨');
+  goHole((state.activeHole ?? 0) + 1);
 }
 
 function adjustScore(pid, hi, delta) {
@@ -1451,54 +1533,49 @@ function adjustScore(pid, hi, delta) {
   const base = (current !== '' && current !== null && current !== undefined) ? Number(current) : state.settings.par[hi];
   const newVal = Math.max(1, base + delta);
   if (!match.scores) match.scores = {};
-  if (!match.scores[pid]) match.scores[pid] = new Array(18).fill('');
+  if (!match.scores[pid]) match.scores[pid] = [...state.settings.par];
   match.scores[pid][hi] = newVal;
   saveState();
 
-  // 스코어 셀 업데이트
+  // 홀별 모드: 해당 플레이어 셀만 즉시 업데이트
   const ci = state.players.findIndex(p => p.id === pid) % 4;
+  const par = state.settings.par[hi];
+  const isDefault = newVal === par;
   const valEl = document.getElementById(`sc_${pid}_${hi}`);
   if (valEl) {
-    const par = state.settings.par[hi];
-    const isDefault = newVal === par;
     valEl.textContent = newVal;
-    valEl.style.color = COLOR_HEX[ci];
-    valEl.style.opacity = isDefault ? '0.45' : '1';
-    valEl.style.fontWeight = isDefault ? '400' : '700';
+    valEl.style.color = isDefault ? 'var(--text-light)' : COLOR_HEX[ci];
   }
-
-  // 행 합계 업데이트
-  const scores = match.scores[pid];
-  const front9 = scores.slice(0,9).reduce((s,v) => s + (v !== '' && v !== null ? Number(v) : 0), 0);
-  const back9  = scores.slice(9,18).reduce((s,v) => s + (v !== '' && v !== null ? Number(v) : 0), 0);
-  const tot = front9 + back9;
-  const fe = document.getElementById(`row_front_${pid}`); if (fe) fe.textContent = front9 || '-';
-  const be = document.getElementById(`row_back_${pid}`);  if (be) be.textContent = back9  || '-';
-  const te = document.getElementById(`row_tot_${pid}`);   if (te) te.textContent = tot    || '-';
-
-  // 진행률 업데이트
-  const entered = countEnteredHoles(match);
-  const pct = (entered / 18 * 100).toFixed(0);
-  const pf = document.getElementById('progressFill');  if (pf) pf.style.width = (entered / 18 * 100).toFixed(0) + '%';
-  const pt = document.getElementById('progressText');  if (pt) pt.textContent = entered > 0 ? `${entered}홀 조정됨` : '파 기본값으로 시작';
-
-  // 배율 셀 업데이트
+  // 상대타수 레이블 업데이트
+  const relEl = document.getElementById(`rel_${pid}_${hi}`);
+  if (relEl) {
+    const rel = newVal - par;
+    relEl.innerHTML = rel === 0
+      ? `<span style="color:var(--text-light)">파</span>`
+      : rel < 0 ? `<span style="color:#2980b9;font-weight:700">${rel}</span>`
+      : `<span style="color:var(--red-light);font-weight:700">+${rel}</span>`;
+  }
+  // 진행 점 업데이트 (해당 홀 dot)
+  const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+  const dotEl = document.querySelector(`.hole-dot:nth-child(${hi + 1})`);
+  if (dotEl) {
+    const adjusted = players.some(p => Number(match.scores[p.id]?.[hi]) !== state.settings.par[hi]);
+    dotEl.classList.toggle('adjusted', adjusted);
+  }
+  // 배율 뱃지 업데이트
   if (match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus) {
-    const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
     const par_h = state.settings.par[hi];
-    const holeScores = players.map(p => {
-      const sc = match.scores?.[p.id]?.[hi];
-      return (sc !== '' && sc !== null && sc !== undefined) ? { pid: p.id, score: Number(sc) } : null;
-    }).filter(Boolean);
+    const holeScores = players.map(p => ({ pid: p.id, score: Number(match.scores[p.id]?.[hi]) }));
     const birdieExempt = match.bettingRule?.birdieExempt ?? [];
     const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
     let mult = 1;
     if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par_h - 1)) mult++;
     if (match.bettingRule?.doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par_h * 2)) mult++;
-    const mc = document.getElementById(`mult_cell_${hi}`);
-    if (mc) {
-      if (mult === 1) { mc.innerHTML = ''; }
-      else { const col = mult === 3 ? '#c0392b' : '#d4a843'; mc.innerHTML = `<span style="font-size:10px;font-weight:700;color:${col};background:${col}22;border-radius:3px;padding:1px 3px">×${mult}</span>`; }
+    const mc2 = document.getElementById('holeMultBadge');
+    if (mc2) {
+      mc2.innerHTML = mult > 1
+        ? `<span style="font-size:12px;font-weight:700;color:${mult===3?'#c0392b':'var(--gold)'};background:${mult===3?'rgba(192,57,43,0.12)':'rgba(212,168,67,0.15)'};border-radius:6px;padding:2px 8px;margin-left:6px">×${mult}</span>`
+        : '';
     }
   }
 }
@@ -1848,6 +1925,7 @@ function createMatch() {
   selectedPlayers.forEach(pid => { match.scores[pid] = [...state.settings.par]; });
   state.matches.push(match);
   state.activeMatchId = match.id;
+  state.activeHole = 0;
   selectedPlayers = [];
   saveState();
   closeModalForce();
