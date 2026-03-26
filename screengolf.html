@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.0.3';
+const APP_VERSION = 'v2.0.4';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -952,7 +952,7 @@ function calcHoleResults(match) {
           const { pid: pB, score: sB } = holeScores[b];
           if (sA === sB) continue;
           const [payerPid, payerScore, recvPid, recvScore] = sA > sB ? [pA, sA, pB, sB] : [pB, sB, pA, sA];
-          const pairMult = calcPairMultiplier(match, h, payerPid, payerScore, recvScore) * allTieCarryMult;
+          const pairMult = calcPairMultiplier(match, h, payerPid, payerScore, recvScore) * usedAllTieMult;
           const pay = Math.abs(sA - sB) * base * pairMult;
           amounts[payerPid] -= pay;
           amounts[recvPid]  += pay;
