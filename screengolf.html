@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.0.9';
+const APP_VERSION = 'v2.1.0';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1024,6 +1024,25 @@ function settleTxnRowHTML(tx, fci, tci) {
 }
 
 /** 플레이어별 합계 */
+/** 핸디 선불 정산 트랜잭션 계산 (낮은 핸디 → 높은 핸디, 소수점 반올림) */
+function calcHandicapTxns(match) {
+  const mode = match.bettingRule?.mode || state.settings.betMode;
+  if (mode === 'friendly') return [];
+  const base = match.bettingRule?.baseAmount || state.settings.baseAmount;
+  const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+  const hcPlayers = players.map(p => ({ ...p, hc: Math.round(p.handicap || 0) }));
+  const txns = [];
+  for (let a = 0; a < hcPlayers.length; a++) {
+    for (let b = a + 1; b < hcPlayers.length; b++) {
+      const pA = hcPlayers[a], pB = hcPlayers[b];
+      if (pA.hc === pB.hc) continue;
+      const [payer, receiver] = pA.hc < pB.hc ? [pA, pB] : [pB, pA];
+      txns.push({ from: payer, to: receiver, amt: Math.abs(pA.hc - pB.hc) * base });
+    }
+  }
+  return txns;
+}
+
 function calcPlayerTotals(match) {
   const { holeResults } = calcHoleResults(match);
   const totals = {};
@@ -1037,6 +1056,13 @@ function calcPlayerTotals(match) {
       if(sc !== '' && sc !== null && sc !== undefined) totals[pid].score += Number(sc);
     });
   });
+
+  // 핸디 선불 정산 금액 반영
+  calcHandicapTxns(match).forEach(tx => {
+    if (totals[tx.from.id] !== undefined) totals[tx.from.id].amount -= tx.amt;
+    if (totals[tx.to.id]   !== undefined) totals[tx.to.id].amount   += tx.amt;
+  });
+
   return totals;
 }
 
@@ -1266,37 +1292,6 @@ function renderScorecard() {
     : `<span id="holeMultBadge"></span>`;
 
   // 플레이어별 입력 행
-  // 핸디 선불 정산 (홀 1에서만, 친선전 제외)
-  const matchMode2 = match.bettingRule?.mode || state.settings.betMode;
-  const matchBase2 = match.bettingRule?.baseAmount || state.settings.baseAmount;
-  let handicapPanelHTML = '';
-  if (hi === 0 && matchMode2 !== 'friendly') {
-    const hcPlayers = players.map(p => ({ ...p, hc: Math.round(p.handicap || 0) }));
-    const hcTxns = [];
-    for (let a = 0; a < hcPlayers.length; a++) {
-      for (let b = a + 1; b < hcPlayers.length; b++) {
-        const pA = hcPlayers[a], pB = hcPlayers[b];
-        if (pA.hc === pB.hc) continue;
-        const [payer, receiver] = pA.hc < pB.hc ? [pA, pB] : [pB, pA];
-        const amt = Math.abs(pA.hc - pB.hc) * matchBase2;
-        hcTxns.push({ from: payer, to: receiver, amt });
-      }
-    }
-    if (hcTxns.length > 0) {
-      const rows = hcTxns.map(tx => {
-        const fci = state.players.findIndex(p => p.id === tx.from.id) % 4;
-        const tci = state.players.findIndex(p => p.id === tx.to.id) % 4;
-        return settleTxnRowHTML(tx, fci, tci);
-      }).join('');
-      handicapPanelHTML = `
-        <div style="background:white;border-radius:12px;padding:14px 16px;margin-bottom:12px;border:1.5px solid rgba(212,168,67,0.35)">
-          <div style="font-weight:700;font-size:13px;color:var(--gold);margin-bottom:2px">🏌️ 핸디 선불 정산</div>
-          <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">핸디 차이만큼 미리 주고받아 공평하게 시작</div>
-          ${rows}
-        </div>`;
-    }
-  }
-
   const playerRows = players.map(p => {
     const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
     const sc = Number(match.scores[p.id]?.[hi] ?? par);
@@ -1345,8 +1340,6 @@ function renderScorecard() {
       </div>
       <div class="hole-progress-dots">${dots}</div>
     </div>
-
-    ${handicapPanelHTML}
 
     ${playerRows}
 
@@ -1456,6 +1449,22 @@ function renderResults() {
           ${mode !== 'friendly' ? `<div class="result-amount ${t.amount > 0 ? 'amount-plus' : t.amount < 0 ? 'amount-minus' : 'amount-zero'}">${t.amount > 0 ? '+' : ''}${t.amount.toLocaleString()}원</div>` : ''}
         </div>`;
     }).join('')}
+
+    ${(() => {
+      const hcTxns = calcHandicapTxns(match);
+      if (!hcTxns.length) return '';
+      const rows = hcTxns.map(tx => {
+        const fci = state.players.findIndex(p => p.id === tx.from.id) % 4;
+        const tci = state.players.findIndex(p => p.id === tx.to.id) % 4;
+        return settleTxnRowHTML(tx, fci, tci);
+      }).join('');
+      return `
+        <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">🏌️ 핸디 선불 정산</div>
+        <div class="card" style="padding:14px 16px;margin-bottom:0">
+          <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">핸디 차이만큼 미리 주고받아 공평하게 시작 (소수점 반올림)</div>
+          ${rows}
+        </div>`;
+    })()}
 
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">📊 홀별 내역</div>
     <div class="card" style="padding:0;overflow:hidden">
