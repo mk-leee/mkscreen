@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.0.6';
+const APP_VERSION = 'v2.0.7';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1274,11 +1274,19 @@ function renderScorecard() {
       : rel < 0 ? `<span style="color:#2980b9;font-weight:700">${rel}</span>`
       : `<span style="color:var(--red-light);font-weight:700">+${rel}</span>`;
     const isDefault = sc === par;
+
+    // 누적 타수 대비 파
+    const totalRel = state.settings.par.reduce((sum, hpar, h) => {
+      const s = Number(match.scores[p.id]?.[h]);
+      return (s > 0) ? sum + s - hpar : sum;
+    }, 0);
+    const totalRelStr = totalRel === 0 ? 'E' : (totalRel > 0 ? `+${totalRel}` : `${totalRel}`);
+    const totalRelColor = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
     return `
       <div class="player-score-row">
         <div style="width:42px;height:42px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:17px;flex-shrink:0">${p.name[0]}</div>
         <div class="ps-info">
-          <div class="ps-name">${p.name}${p.handicap?`<span style="font-size:11px;color:var(--text-light);font-weight:400;margin-left:4px">H${p.handicap}</span>`:''}</div>
+          <div class="ps-name">${p.name}<span id="totalRel_${p.id}" style="font-size:11px;font-weight:700;margin-left:6px;color:${totalRelColor}">${totalRelStr}</span></div>
           <div class="ps-rel" id="rel_${p.id}_${hi}">${relLabel}</div>
         </div>
         <div class="big-stepper">
@@ -1657,6 +1665,16 @@ function adjustScore(pid, hi, delta) {
   if (valEl) {
     valEl.textContent = newVal;
     valEl.style.color = isDefault ? 'var(--text-light)' : COLOR_HEX[ci];
+  }
+  // 누적 타수 대비 파 업데이트
+  const totalRelEl = document.getElementById(`totalRel_${pid}`);
+  if (totalRelEl) {
+    const totalRel = state.settings.par.reduce((sum, hpar, h) => {
+      const s = Number(match.scores[pid]?.[h]);
+      return (s > 0) ? sum + s - hpar : sum;
+    }, 0);
+    totalRelEl.textContent = totalRel === 0 ? 'E' : (totalRel > 0 ? `+${totalRel}` : `${totalRel}`);
+    totalRelEl.style.color = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
   }
   // 상대타수 레이블 업데이트
   const relEl = document.getElementById(`rel_${pid}_${hi}`);
