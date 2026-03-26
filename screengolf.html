@@ -824,18 +824,25 @@ const APP_VERSION = 'v2.1.6';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
-const COLOR_HEX = ['#2ecc71','#3498db','#e74c3c','#9b59b6'];
-let _editPlayerColorIdx = 0;
-function nextAvailableColorIndex() {
-  const used = new Set(state.players.map(p => p.colorIndex ?? (state.players.indexOf(p) % 4)));
-  for (let i = 0; i < COLOR_HEX.length; i++) { if (!used.has(i)) return i; }
-  return state.players.length % 4;
+const COLOR_HEX = ['#2ecc71','#3498db','#e74c3c','#9b59b6','#f39c12','#1abc9c','#e91e63','#607d8b'];
+const PRESET_COLORS = [
+  '#2ecc71','#3498db','#e74c3c','#9b59b6',
+  '#f39c12','#1abc9c','#e91e63','#607d8b',
+  '#ff6b35','#00b894','#6c5ce7','#fd79a8',
+  '#2d3436','#b2bec3','#e17055','#00cec9'
+];
+let _editPlayerColor = COLOR_HEX[0];
+function nextAvailableColor() {
+  const used = new Set(state.players.map(p => playerColor(p.id)));
+  for (const hex of PRESET_COLORS) { if (!used.has(hex)) return hex; }
+  return PRESET_COLORS[state.players.length % PRESET_COLORS.length];
 }
-function playerCI(id) {
+function playerColor(id) {
   const p = state.players.find(pl => pl.id === id);
-  if (!p) return 0;
-  if (p.colorIndex !== undefined && p.colorIndex !== null) return p.colorIndex;
-  return state.players.findIndex(pl => pl.id === id) % 4;
+  if (!p) return COLOR_HEX[0];
+  if (p.color) return p.color;
+  if (p.colorIndex !== undefined && p.colorIndex !== null) return COLOR_HEX[p.colorIndex] || COLOR_HEX[0];
+  return COLOR_HEX[state.players.findIndex(pl => pl.id === id) % COLOR_HEX.length];
 }
 const PAR_DEFAULT = [4,4,3,4,5,3,4,5,4, 4,4,3,5,4,4,3,5,4]; // 파72 기본
 
@@ -1023,15 +1030,15 @@ function calcPairwiseTxns(holeScores, base, multiplier) {
 }
 
 /** 정산 행 HTML (from → 금액 → to 중앙 배치) */
-function settleTxnRowHTML(tx, fci, tci) {
+function settleTxnRowHTML(tx, fhex, thex) {
   return `
     <div style="display:flex;align-items:center;padding:7px 0;border-top:1px solid #f0f0f0">
-      <span style="flex:1;text-align:right;font-size:13px;font-weight:700;color:${COLOR_HEX[fci]};padding-right:6px">${tx.from.name}</span>
+      <span style="flex:1;text-align:right;font-size:13px;font-weight:700;color:${fhex};padding-right:6px">${tx.from.name}</span>
       <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;min-width:80px">
         <span style="font-size:13px;font-weight:800;color:var(--green-dark);white-space:nowrap">${tx.amt.toLocaleString()}원</span>
         <span style="font-size:11px;color:var(--text-light);line-height:1.2">──▶</span>
       </div>
-      <span style="flex:1;text-align:left;font-size:13px;font-weight:700;color:${COLOR_HEX[tci]};padding-left:6px">${tx.to.name}</span>
+      <span style="flex:1;text-align:left;font-size:13px;font-weight:700;color:${thex};padding-left:6px">${tx.to.name}</span>
     </div>`;
 }
 
@@ -1160,10 +1167,10 @@ function renderMatchCard(m) {
   const players = m.playerIds.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
   const mode = m.bettingRule?.mode || state.settings.betMode;
   const base = m.bettingRule?.baseAmount || state.settings.baseAmount;
-  const playerChips = players.map((p, i) => {
-    const ci = playerCI(p.id);
+  const playerChips = players.map((p) => {
+    const hex = playerColor(p.id);
     const hc = m.handicaps?.[p.id] ?? p.handicap;
-    return `<span class="player-chip ${PLAYER_BG_COLORS[ci]} unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px">${p.name}${hc ? ` (H${hc})` : ''}</span>`;
+    return `<span class="player-chip unselected" style="padding:4px 10px;font-size:12px;border-radius:16px;border-width:1.5px;background:${hex}1e;border-color:${hex};color:${hex}">${p.name}${hc ? ` (H${hc})` : ''}</span>`;
   }).join('');
 
   return `
@@ -1223,11 +1230,11 @@ function renderPlayers() {
       <div class="section-title">👥 플레이어 목록</div>
     </div>
     ${state.players.map((p) => {
-      const ci = playerCI(p.id);
+      const pcolor = playerColor(p.id);
       const pmatch = state.matches.filter(m => m.playerIds.includes(p.id));
       return `
         <div class="card" style="display:flex;align-items:center;gap:14px">
-          <div style="width:44px;height:44px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:18px;flex-shrink:0">
+          <div style="width:44px;height:44px;border-radius:50%;background:${pcolor};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:18px;flex-shrink:0">
             ${p.name[0]}
           </div>
           <div style="flex:1">
@@ -1309,7 +1316,7 @@ function renderScorecard() {
 
   // 플레이어별 입력 행
   const playerRows = players.map(p => {
-    const ci = playerCI(p.id);
+    const pcolor = playerColor(p.id);
     const sc = Number(match.scores[p.id]?.[hi] ?? par);
     const rel = sc - par;
     const relLabel = rel === 0 ? `<span style="color:var(--text-light)">파</span>`
@@ -1326,15 +1333,15 @@ function renderScorecard() {
     const totalRelColor = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
     return `
       <div class="player-score-row">
-        <div style="width:42px;height:42px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:17px;flex-shrink:0">${p.name[0]}</div>
+        <div style="width:42px;height:42px;border-radius:50%;background:${pcolor};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:17px;flex-shrink:0">${p.name[0]}</div>
         <div class="ps-info">
           <div class="ps-name">${p.name}<span id="totalRel_${p.id}" style="font-size:11px;font-weight:700;margin-left:6px;color:${totalRelColor}">${totalRelStr}</span></div>
           <div class="ps-rel" id="rel_${p.id}_${hi}">${relLabel}</div>
         </div>
         <div class="big-stepper">
-          <button class="big-stepper-btn" style="color:${COLOR_HEX[ci]};background:${COLOR_HEX[ci]}18" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
-          <div class="big-stepper-val" id="sc_${p.id}_${hi}" style="color:${isDefault?'var(--text-light)':COLOR_HEX[ci]}">${sc}</div>
-          <button class="big-stepper-btn" style="color:${COLOR_HEX[ci]};background:${COLOR_HEX[ci]}18" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
+          <button class="big-stepper-btn" style="color:${pcolor};background:${pcolor}18" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
+          <div class="big-stepper-val" id="sc_${p.id}_${hi}" style="color:${isDefault?'var(--text-light)':pcolor}">${sc}</div>
+          <button class="big-stepper-btn" style="color:${pcolor};background:${pcolor}18" onclick="adjustScore('${p.id}',${hi},1)">＋</button>
         </div>
       </div>`;
   }).join('');
@@ -1467,7 +1474,7 @@ function renderResults() {
           </thead>
           <tbody>
             ${players.map((p, pi) => {
-              const ci = playerCI(p.id);
+              const pcolor = playerColor(p.id);
               let hSum = 0, hParSum = 0;
               const cells = holes.map((par, i) => {
                 const h = start + i;
@@ -1490,7 +1497,7 @@ function renderResults() {
               const htxt = hd === null ? '-' : hd === 0 ? 'E' : hd > 0 ? '+'+hd : ''+hd;
               const hclr = hd === null ? 'var(--text-mid)' : hd < 0 ? '#2980b9' : hd === 0 ? 'var(--text-mid)' : '#c0392b';
               return `<tr style="border-top:1px solid #eee;background:${pi%2===0?'white':'#fafafa'}">
-                <td style="padding:5px 5px;font-weight:700;color:${COLOR_HEX[ci]}">${p.name}</td>
+                <td style="padding:5px 5px;font-weight:700;color:${pcolor}">${p.name}</td>
                 ${cells}
                 <td style="padding:5px 3px;text-align:center;font-weight:800;color:${hclr};font-size:12px">${htxt}</td>
               </tr>`;
@@ -1514,13 +1521,13 @@ function renderResults() {
         ? [...players].sort((a,b) => (totals[b.id]?.amount||0) - (totals[a.id]?.amount||0))
         : ranked
       ).map((p, i) => {
-      const ci = playerCI(p.id);
+      const pcolor = playerColor(p.id);
       const t = totals[p.id] || { amount: 0, wins: 0, score: 0 };
       const rankIdx = ranked.findIndex(r => r.id === p.id);
       return `
         <div class="result-player-card">
           <div class="result-rank ${rankIdx < 3 ? `rank-${rankIdx+1}` : ''}">${rankNums[rankIdx] || rankIdx+1}</div>
-          <div style="width:40px;height:40px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:16px;flex-shrink:0">${p.name[0]}</div>
+          <div style="width:40px;height:40px;border-radius:50%;background:${pcolor};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:16px;flex-shrink:0">${p.name[0]}</div>
           <div class="result-player-info">
             <div class="result-player-name">
               ${p.name}
@@ -1539,9 +1546,7 @@ function renderResults() {
         .sort((a, b) => a.from.name.localeCompare(b.from.name, 'ko'));
       if (!hcTxns.length) return '';
       const rows = hcTxns.map(tx => {
-        const fci = playerCI(tx.from.id);
-        const tci = playerCI(tx.to.id);
-        return settleTxnRowHTML(tx, fci, tci);
+        return settleTxnRowHTML(tx, playerColor(tx.from.id), playerColor(tx.to.id));
       }).join('');
       return `
         <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">🏌️ 핸디 선불 정산</div>
@@ -1555,12 +1560,12 @@ function renderResults() {
     <div class="card" style="padding:0;overflow:hidden">
       ${holeResults.filter(hr => hr.scores.length >= 2).map(hr => {
         const winner = hr.winnerId ? state.players.find(p => p.id === hr.winnerId) : null;
-        const winnerCi = winner ? playerCI(winner.id) : 0;
+        const winnerColor = winner ? playerColor(winner.id) : COLOR_HEX[0];
         const scoreBadges = hr.scores.map(s => {
           const pp = state.players.find(pl => pl.id === s.pid);
-          const ci2 = playerCI(s.pid);
+          const sc2 = playerColor(s.pid);
           const amt = hr.amounts[s.pid];
-          return `<span style="font-size:12px;padding:2px 6px;border-radius:8px;background:${COLOR_HEX[ci2]}22;color:${COLOR_HEX[ci2]};font-weight:600">${pp?.name||'?'} ${s.score}타${(mode !== 'friendly' && amt) ? ` (${amt > 0 ? '+' : ''}${Math.round(amt).toLocaleString()})` : ''}</span>`;
+          return `<span style="font-size:12px;padding:2px 6px;border-radius:8px;background:${sc2}22;color:${sc2};font-weight:600">${pp?.name||'?'} ${s.score}타${(mode !== 'friendly' && amt) ? ` (${amt > 0 ? '+' : ''}${Math.round(amt).toLocaleString()})` : ''}</span>`;
         }).join('');
 
         // 홀 정산 내역: 모든 페어 직접 정산
@@ -1575,9 +1580,7 @@ function renderResults() {
               amt:  t.amt
             })).filter(t => t.from && t.to);
         const txnRows = holeTxns.map(tx => {
-          const fci = playerCI(tx.from.id);
-          const tci = playerCI(tx.to.id);
-          return settleTxnRowHTML(tx, fci, tci);
+          return settleTxnRowHTML(tx, playerColor(tx.from.id), playerColor(tx.to.id));
         }).join('');
 
         return `
@@ -1587,7 +1590,7 @@ function renderResults() {
               <div style="flex:1">
                 <div style="font-size:12px;margin-bottom:4px">
                   ${hr.tie ? `<span style="color:var(--text-light)">⚖️ 타이 ${mode==="skin"?"(이월)":"(무승부)"}</span>` :
-                    winner ? `<span style="color:${COLOR_HEX[winnerCi]};font-weight:700">🏆 ${winner.name}</span>` : '<span style="color:var(--text-light)">미입력</span>'}
+                    winner ? `<span style="color:${winnerColor};font-weight:700">🏆 ${winner.name}</span>` : '<span style="color:var(--text-light)">미입력</span>'}
                   ${hr.carried > 0 ? `<span style="font-size:11px;color:var(--gold);margin-left:4px">팟 ${hr.carried.toLocaleString()}↑</span>` : ''}
                 ${hr.allTieMult > 1 ? `<span style="font-size:11px;color:#2980b9;margin-left:4px;font-weight:700">🤝×${hr.allTieMult}</span>` : ''}
                 </div>
@@ -1801,13 +1804,13 @@ function adjustScore(pid, hi, delta) {
   saveState();
 
   // 홀별 모드: 해당 플레이어 셀만 즉시 업데이트
-  const ci = playerCI(pid);
+  const pcolor = playerColor(pid);
   const par = state.settings.par[hi];
   const isDefault = newVal === par;
   const valEl = document.getElementById(`sc_${pid}_${hi}`);
   if (valEl) {
     valEl.textContent = newVal;
-    valEl.style.color = isDefault ? 'var(--text-light)' : COLOR_HEX[ci];
+    valEl.style.color = isDefault ? 'var(--text-light)' : pcolor;
   }
   // 누적 타수 대비 파 업데이트
   const totalRelEl = document.getElementById(`totalRel_${pid}`);
@@ -1905,9 +1908,7 @@ function saveScores() {
       </div>`;
   } else {
     const rows = holeTxns.map(t => {
-      const ci_from = playerCI(t.from.id);
-      const ci_to   = playerCI(t.to.id);
-      return settleTxnRowHTML(t, ci_from, ci_to);
+      return settleTxnRowHTML(t, playerColor(t.from.id), playerColor(t.to.id));
     }).join('');
     panel.innerHTML = `
       <div style="background:white;border-radius:12px;padding:14px 16px;margin:10px 0 4px;border:1.5px solid #e8f5e9">
@@ -1956,20 +1957,24 @@ function deletePlayer(id) {
   renderPlayers();
 }
 
-function selectEditPlayerColor(ci) {
-  _editPlayerColorIdx = ci;
-  COLOR_HEX.forEach((hex, i) => {
-    const el = document.getElementById(`editColorSwatch_${i}`);
+function pickEditPlayerColor(hex) {
+  _editPlayerColor = hex;
+  PRESET_COLORS.forEach(h => {
+    const el = document.getElementById(`epcs_${h.replace('#','')}`);
     if (!el) return;
-    el.style.border = `3px solid ${i === ci ? '#fff' : 'transparent'}`;
-    el.style.boxShadow = i === ci ? `0 0 0 2px ${hex}` : 'none';
+    el.style.border = `3px solid ${h === hex ? '#fff' : 'transparent'}`;
+    el.style.boxShadow = h === hex ? `0 0 0 2px ${h}` : 'none';
   });
+  const preview = document.getElementById('editColorPreview');
+  if (preview) preview.style.background = hex;
+  const inp = document.getElementById('editColorInput');
+  if (inp) inp.value = hex;
 }
 
 function openEditPlayerModal(id) {
   const p = state.players.find(pl => pl.id === id);
   if(!p) return;
-  _editPlayerColorIdx = playerCI(id);
+  _editPlayerColor = playerColor(id);
   openModal(`
     <div class="modal-title">✏️ 플레이어 수정</div>
     <div class="input-group">
@@ -1982,15 +1987,20 @@ function openEditPlayerModal(id) {
     </div>
     <div class="input-group">
       <label class="input-label">색상</label>
-      <div style="display:flex;gap:12px;padding:4px 0">
-        ${COLOR_HEX.map((hex, i) => `
-          <div id="editColorSwatch_${i}" onclick="selectEditPlayerColor(${i})"
-            style="width:38px;height:38px;border-radius:50%;background:${hex};cursor:pointer;
-              border:3px solid ${i===_editPlayerColorIdx?'#fff':'transparent'};
-              box-shadow:${i===_editPlayerColorIdx?`0 0 0 2px ${hex}`:'none'};
-              display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:15px">
-            ${p.name[0]}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 8px">
+        ${PRESET_COLORS.map(hex => `
+          <div id="epcs_${hex.replace('#','')}" onclick="pickEditPlayerColor('${hex}')"
+            style="width:32px;height:32px;border-radius:50%;background:${hex};cursor:pointer;flex-shrink:0;
+              border:3px solid ${hex===_editPlayerColor?'#fff':'transparent'};
+              box-shadow:${hex===_editPlayerColor?`0 0 0 2px ${hex}`:'none'}">
           </div>`).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+        <div id="editColorPreview" style="width:38px;height:38px;border-radius:50%;background:${_editPlayerColor};flex-shrink:0;display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:16px">${p.name[0]}</div>
+        <input id="editColorInput" type="color" value="${_editPlayerColor}"
+          style="width:44px;height:38px;border:none;border-radius:8px;cursor:pointer;padding:2px"
+          oninput="pickEditPlayerColor(this.value)">
+        <span style="font-size:12px;color:var(--text-light)">직접 선택</span>
       </div>
     </div>
     <button class="btn btn-primary btn-full" onclick="savePlayerEdit('${id}')" style="margin-top:8px">저장</button>
@@ -2007,7 +2017,7 @@ function savePlayerEdit(id) {
   const hc = document.getElementById('editPlayerHandicap')?.value;
   p.name = name;
   p.handicap = hc ? Number(hc) : null;
-  p.colorIndex = _editPlayerColorIdx;
+  p.color = _editPlayerColor;
   saveState();
   closeModalForce();
   showToast(`✅ ${name} 수정 완료!`);
@@ -2053,7 +2063,7 @@ function addPlayer() {
   if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
   if(state.players.find(p => p.name === name)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
   const hc = document.getElementById('newPlayerHandicap')?.value;
-  state.players.push({ id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: nextAvailableColorIndex() });
+  state.players.push({ id: uid(), name, handicap: hc ? Number(hc) : null, color: nextAvailableColor() });
   saveState();
   closeModalForce();
   showToast(`✅ ${name} 등록 완료!`);
@@ -2065,13 +2075,13 @@ function buildPlayerSelectList() {
     return `<div style="padding:12px;text-align:center;color:var(--text-light);font-size:13px">등록된 플레이어가 없습니다</div>`;
   }
   return state.players.map((p) => {
-    const ci = playerCI(p.id);
+    const pcolor = playerColor(p.id);
     const isSelected = selectedPlayers.includes(p.id);
     const hcVal = matchHandicaps[p.id] ?? (isSelected ? (p.handicap ?? '') : '');
     return `
       <label style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;cursor:pointer;transition:background 0.1s;background:${isSelected?'rgba(74,140,92,0.1)':''}" id="pLabel_${p.id}">
         <input type="checkbox" id="pCheck_${p.id}" onchange="togglePlayerSelect('${p.id}')" style="display:none">
-        <div style="width:36px;height:36px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:15px">${p.name[0]}</div>
+        <div style="width:36px;height:36px;border-radius:50%;background:${pcolor};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:15px">${p.name[0]}</div>
         <span style="font-weight:600">${p.name}</span>
         <span style="margin-left:auto;font-size:18px;display:${isSelected?'inline':'none'}" id="pCheck_icon_${p.id}">✓</span>
         <input type="number" id="matchHc_${p.id}" placeholder="핸디" min="0" max="54" step="0.1"
@@ -2175,7 +2185,7 @@ function addPlayerFromMatch() {
   if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
   if(state.players.find(p => p.name === name)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
   const hc = document.getElementById('inlinePlayerHc')?.value;
-  const newPlayer = { id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: nextAvailableColorIndex() };
+  const newPlayer = { id: uid(), name, handicap: hc ? Number(hc) : null, color: nextAvailableColor() };
   state.players.push(newPlayer);
   saveState();
 
@@ -2478,9 +2488,8 @@ function openEditMatchModal(id) {
       ${m.playerIds.map(pid => {
         const player = state.players.find(p => p.id === pid);
         const hcVal = matchHandicaps[pid] ?? '';
-        const ci = playerCI(pid);
         return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0">
-          <div style="width:30px;height:30px;border-radius:50%;background:${COLOR_HEX[ci]};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:13px;flex-shrink:0">${player?.name[0]||'?'}</div>
+          <div style="width:30px;height:30px;border-radius:50%;background:${playerColor(pid)};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:13px;flex-shrink:0">${player?.name[0]||'?'}</div>
           <span style="flex:1;font-weight:600;font-size:14px">${player?.name||'?'}</span>
           <input type="number" id="matchHc_${pid}" placeholder="핸디" min="0" max="54" step="0.1"
             value="${hcVal}"
