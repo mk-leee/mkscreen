@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.8.1';
+const APP_VERSION = 'v1.9.2';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -863,7 +863,7 @@ function calcHoleMultiplier(match, h, holeScores) {
   const birdieExempt = match.bettingRule?.birdieExempt ?? [];
   const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
   let mult = 1;
-  if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par - 1)) mult++;
+  if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score <= par - 1)) mult++;
   if (doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par * 2)) mult++;
   return mult; // 최대 3배 (1 + 1 + 1)
 }
@@ -1218,7 +1218,12 @@ function renderScorecard() {
         <button class="hole-nav-btn" onclick="goHole(${hi-1})" ${hi===0?'disabled':''}>‹</button>
         <div class="hole-number-display">
           <div class="hole-num-big">${hi+1}<span style="font-size:20px;opacity:0.5"> / 18</span></div>
-          <div class="hole-par-label">파 ${par}${multBadge}</div>
+          <div class="hole-par-label">
+            <button onclick="adjustHolePar(${hi},-1)" style="background:none;border:none;color:var(--gold-light);font-size:18px;font-weight:700;cursor:pointer;padding:0 6px;line-height:1;opacity:0.8">－</button>
+            <span id="holeParDisplay">파 ${par}</span>
+            <button onclick="adjustHolePar(${hi},1)" style="background:none;border:none;color:var(--gold-light);font-size:18px;font-weight:700;cursor:pointer;padding:0 6px;line-height:1;opacity:0.8">＋</button>
+            ${multBadge}
+          </div>
         </div>
         <button class="hole-nav-btn" onclick="goHole(${hi+1})" ${hi===17?'disabled':''}>›</button>
       </div>
@@ -1520,6 +1525,36 @@ function goHole(hi) {
   renderScorecard();
 }
 
+function adjustHolePar(hi, delta) {
+  const newPar = Math.max(3, Math.min(5, state.settings.par[hi] + delta));
+  if (newPar === state.settings.par[hi]) return;
+  state.settings.par[hi] = newPar;
+  saveState();
+
+  // 파 표시 업데이트
+  const parEl = document.getElementById('holeParDisplay');
+  if (parEl) parEl.textContent = `파 ${newPar}`;
+
+  // 이 홀의 플레이어 스코어가 파와 같으면 새 파로 맞춰 업데이트
+  const match = state.matches.find(m => m.id === state.activeMatchId);
+  if (match) {
+    match.playerIds.forEach(pid => {
+      const sc = match.scores?.[pid]?.[hi];
+      // 해당 홀 상대타수 레이블 재계산
+      const relEl = document.getElementById(`rel_${pid}_${hi}`);
+      if (relEl && sc !== null && sc !== undefined && sc !== '') {
+        const rel = Number(sc) - newPar;
+        relEl.innerHTML = rel === 0
+          ? `<span style="color:var(--text-light)">파</span>`
+          : rel < 0 ? `<span style="color:#2980b9;font-weight:700">${rel}</span>`
+          : `<span style="color:var(--red-light);font-weight:700">+${rel}</span>`;
+      }
+    });
+  }
+
+  showToast(`${hi+1}번 홀 파 → ${newPar}`);
+}
+
 function saveAndNextHole() {
   saveState();
   showToast('✅ 저장됨');
@@ -1531,7 +1566,7 @@ function adjustScore(pid, hi, delta) {
   if (!match) return;
   const current = match.scores?.[pid]?.[hi];
   const base = (current !== '' && current !== null && current !== undefined) ? Number(current) : state.settings.par[hi];
-  const newVal = Math.max(1, base + delta);
+  const newVal = Math.max(1, Math.min(state.settings.par[hi] * 2, base + delta));
   if (!match.scores) match.scores = {};
   if (!match.scores[pid]) match.scores[pid] = [...state.settings.par];
   match.scores[pid][hi] = newVal;
@@ -1569,7 +1604,7 @@ function adjustScore(pid, hi, delta) {
     const birdieExempt = match.bettingRule?.birdieExempt ?? [];
     const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
     let mult = 1;
-    if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score === par_h - 1)) mult++;
+    if (match.bettingRule?.birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score <= par_h - 1)) mult++;
     if (match.bettingRule?.doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par_h * 2)) mult++;
     const mc2 = document.getElementById('holeMultBadge');
     if (mc2) {
