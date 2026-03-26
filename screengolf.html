@@ -1437,9 +1437,9 @@ function renderResults() {
       <div style="margin-bottom:8px;border-radius:10px;border:1px solid #e0e0e0;overflow:hidden">
         <table style="border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed">
           <colgroup>
-            <col style="width:40px">
+            <col style="width:54px">
             ${holes.map(() => '<col>').join('')}
-            <col style="width:32px">
+            <col style="width:30px">
           </colgroup>
           <thead>
             <tr style="background:var(--green-dark);color:white">
@@ -1478,7 +1478,7 @@ function renderResults() {
               const htxt = hd === null ? '-' : hd === 0 ? 'E' : hd > 0 ? '+'+hd : ''+hd;
               const hclr = hd === null ? 'var(--text-mid)' : hd < 0 ? '#2980b9' : hd === 0 ? 'var(--text-mid)' : '#c0392b';
               return `<tr style="border-top:1px solid #eee;background:${pi%2===0?'white':'#fafafa'}">
-                <td style="padding:5px 5px;font-weight:700;color:${COLOR_HEX[ci]};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</td>
+                <td style="padding:5px 5px;font-weight:700;color:${COLOR_HEX[ci]}">${p.name}</td>
                 ${cells}
                 <td style="padding:5px 3px;text-align:center;font-weight:800;color:${hclr};font-size:12px">${htxt}</td>
               </tr>`;
