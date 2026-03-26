@@ -1411,6 +1411,8 @@ function renderResults() {
   const mode = match.bettingRule?.mode || state.settings.betMode;
   const base = match.bettingRule?.baseAmount || state.settings.baseAmount;
   const entered = countEnteredHoles(match);
+  const matchIds = state.matches.map(m => m.id);
+  const curIdx = matchIds.indexOf(state.activeMatchId);
 
   // 순위 정렬 (타수 오름차순)
   const ranked = [...players].sort((a,b) => (totals[a.id]?.score || 999) - (totals[b.id]?.score || 999));
@@ -1421,8 +1423,12 @@ function renderResults() {
 
   mc.innerHTML = `
     <div style="margin-bottom:16px">
-      <div style="font-family:'Black Han Sans',sans-serif;font-size:18px;color:var(--green-dark)">${match.course}</div>
-      <div style="font-size:12px;color:var(--text-light)">${formatDate(match.date)} · ${mode === 'friendly' ? '친선전' : mode === 'skin' ? '스킨' : '타수차'}${mode !== 'friendly' ? ` · ${base.toLocaleString()}원` : ''}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button onclick="navigateResult(-1)" style="background:none;border:none;padding:2px 4px;cursor:pointer;color:var(--green-dark);font-size:20px;line-height:1;opacity:${curIdx > 0 ? '1' : '0.2'}" ${curIdx <= 0 ? 'disabled' : ''}>‹</button>
+        <div style="flex:1;font-family:'Black Han Sans',sans-serif;font-size:18px;color:var(--green-dark)">${match.course}</div>
+        <button onclick="navigateResult(1)" style="background:none;border:none;padding:2px 4px;cursor:pointer;color:var(--green-dark);font-size:20px;line-height:1;opacity:${curIdx < matchIds.length - 1 ? '1' : '0.2'}" ${curIdx >= matchIds.length - 1 ? 'disabled' : ''}>›</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-light);margin-left:28px">${formatDate(match.date)} · ${mode === 'friendly' ? '친선전' : mode === 'skin' ? '스킨' : '타수차'}${mode !== 'friendly' ? ` · ${base.toLocaleString()}원` : ''}${matchIds.length > 1 ? ` · ${curIdx + 1}/${matchIds.length}경기` : ''}</div>
       ${(match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus || match.bettingRule?.allTieDouble) ? (() => {
         const birdieExemptNames = (match.bettingRule?.birdieExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
         const doubleParExemptNames = (match.bettingRule?.doubleParExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
@@ -1604,13 +1610,17 @@ function renderResults() {
 
     <div style="height:20px"></div>`;
 
-  // 결과 화면 스와이프: 이전/다음 경기 이동
+  clearSwipeHandlers();
+}
+
+function navigateResult(dir) {
   const matchIds = state.matches.map(m => m.id);
   const curIdx = matchIds.indexOf(state.activeMatchId);
-  attachSwipe(
-    () => { if (curIdx < matchIds.length - 1) { state.activeMatchId = matchIds[curIdx + 1]; renderResults(); } },
-    () => { if (curIdx > 0) { state.activeMatchId = matchIds[curIdx - 1]; renderResults(); } }
-  );
+  const next = curIdx + dir;
+  if (next >= 0 && next < matchIds.length) {
+    state.activeMatchId = matchIds[next];
+    renderResults();
+  }
 }
 
 // ---- 설정 탭 ----
