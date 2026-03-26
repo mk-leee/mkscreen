@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.0.2';
+const APP_VERSION = 'v2.0.3';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -855,7 +855,7 @@ function loadState() {
 // 계산 로직
 // ================================================================
 
-/** 홀 배율 계산 (버디/더블파 보너스) */
+/** 홀 배율 계산 (스킨 모드 / 뱃지용) */
 function calcHoleMultiplier(match, h, holeScores) {
   const birdieBonus = match.bettingRule?.birdieBonus ?? false;
   const doubleParBonus = match.bettingRule?.doubleParBonus ?? false;
@@ -866,7 +866,23 @@ function calcHoleMultiplier(match, h, holeScores) {
   let mult = 1;
   if (birdieBonus && holeScores.filter(s => !birdieExempt.includes(s.pid)).some(s => s.score <= par - 1)) mult++;
   if (doubleParBonus && holeScores.filter(s => !doubleParExempt.includes(s.pid)).some(s => s.score >= par * 2)) mult++;
-  return mult; // 최대 3배 (1 + 1 + 1)
+  return mult;
+}
+
+/** 페어별 배율: 주는 사람 기준으로 예외 적용 */
+function calcPairMultiplier(match, h, payerPid, payerScore, receiverScore) {
+  const birdieBonus = match.bettingRule?.birdieBonus ?? false;
+  const doubleParBonus = match.bettingRule?.doubleParBonus ?? false;
+  if (!birdieBonus && !doubleParBonus) return 1;
+  const par = state.settings.par[h];
+  const birdieExempt = match.bettingRule?.birdieExempt ?? [];
+  const doubleParExempt = match.bettingRule?.doubleParExempt ?? [];
+  let mult = 1;
+  // 버디: 받는 쪽이 버디, 단 주는 쪽이 예외면 비적용
+  if (birdieBonus && receiverScore <= par - 1 && !birdieExempt.includes(payerPid)) mult++;
+  // 더블파: 주는 쪽이 더블파, 단 주는 쪽이 예외면 비적용
+  if (doubleParBonus && payerScore >= par * 2 && !doubleParExempt.includes(payerPid)) mult++;
+  return Math.min(mult, 3);
 }
 
 /** 홀별 승자 및 타당 계산 */
@@ -927,19 +943,23 @@ function calcHoleResults(match) {
         continue;
       }
       const amounts = {};
+      const holeTxnList = [];
       playerIds.forEach(pid => { amounts[pid] = 0; });
-      // 모든 쌍(i, j): 타수 나쁜 쪽이 좋은 쪽에 타수차 × base × multiplier 지불
+      // 모든 쌍: 페어별 배율 적용 (주는 사람 기준 예외)
       for (let a = 0; a < holeScores.length; a++) {
         for (let b = a + 1; b < holeScores.length; b++) {
           const { pid: pA, score: sA } = holeScores[a];
           const { pid: pB, score: sB } = holeScores[b];
           if (sA === sB) continue;
-          const pay = Math.abs(sA - sB) * base * multiplier;
-          if (sA > sB) { amounts[pA] -= pay; amounts[pB] += pay; }
-          else          { amounts[pB] -= pay; amounts[pA] += pay; }
+          const [payerPid, payerScore, recvPid, recvScore] = sA > sB ? [pA, sA, pB, sB] : [pB, sB, pA, sA];
+          const pairMult = calcPairMultiplier(match, h, payerPid, payerScore, recvScore) * allTieCarryMult;
+          const pay = Math.abs(sA - sB) * base * pairMult;
+          amounts[payerPid] -= pay;
+          amounts[recvPid]  += pay;
+          holeTxnList.push({ from: payerPid, to: recvPid, amt: pay });
         }
       }
-      results.push({ hole: h+1, winnerId: winners.length === 1 ? winners[0].pid : null, winnerIds: winners.map(w => w.pid), tie: winners.length > 1, scores: holeScores, amounts, carried: 0, multiplier, allTieMult: usedAllTieMult });
+      results.push({ hole: h+1, winnerId: winners.length === 1 ? winners[0].pid : null, winnerIds: winners.map(w => w.pid), tie: winners.length > 1, scores: holeScores, amounts, txns: holeTxnList, carried: 0, multiplier, allTieMult: usedAllTieMult });
     }
   }
 
@@ -1099,8 +1119,12 @@ function renderMatchCard(m) {
           <div class="match-title">${m.course}</div>
           <div class="match-date">${formatDate(m.date)}</div>
         </div>
-        <div class="match-status ${done ? 'status-done' : 'status-ongoing'}">
-          ${done ? '완료' : entered > 0 ? `${entered}/18H` : '진행중'}
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="event.stopPropagation();openEditMatchModal('${m.id}')"
+            style="background:rgba(255,255,255,0.15);border:none;border-radius:6px;padding:4px 8px;color:white;font-size:12px;cursor:pointer">✏️ 수정</button>
+          <div class="match-status ${done ? 'status-done' : 'status-ongoing'}">
+            ${done ? '완료' : entered > 0 ? `${entered}/18H` : '진행중'}
+          </div>
         </div>
       </div>
       <div class="match-card-body">
@@ -1168,6 +1192,7 @@ function renderPlayers() {
             </div>
             <div style="font-size:11px;color:var(--text-light)">누적 수익</div>
           </div>
+          <button class="btn btn-sm btn-outline" onclick="openEditPlayerModal('${p.id}')" style="margin-right:4px">수정</button>
           <button class="btn btn-sm btn-outline" onclick="deletePlayer('${p.id}')">삭제</button>
         </div>`;
     }).join('')}`;
@@ -1402,7 +1427,11 @@ function renderResults() {
               hr.scores.map(s => state.players.find(p => p.id === s.pid)).filter(Boolean),
               Object.fromEntries(hr.scores.map(s => [s.pid, { amount: hr.amounts[s.pid] ?? 0 }]))
             )
-          : calcPairwiseTxns(hr.scores, base, hr.multiplier);
+          : (hr.txns || []).map(t => ({
+              from: state.players.find(p => p.id === t.from),
+              to:   state.players.find(p => p.id === t.to),
+              amt:  t.amt
+            })).filter(t => t.from && t.to);
         const txnRows = holeTxns.map(tx => {
           const fci = state.players.findIndex(p => p.id === tx.from.id) % 4;
           const tci = state.players.findIndex(p => p.id === tx.to.id)   % 4;
@@ -1689,7 +1718,11 @@ function saveScores() {
             hr.scores.map(s => state.players.find(p => p.id === s.pid)).filter(Boolean),
             Object.fromEntries(hr.scores.map(s => [s.pid, { amount: hr.amounts[s.pid] ?? 0 }]))
           )
-        : calcPairwiseTxns(hr.scores, matchBase, hr.multiplier))
+        : (hr.txns || []).map(t => ({
+            from: state.players.find(p => p.id === t.from),
+            to:   state.players.find(p => p.id === t.to),
+            amt:  t.amt
+          })).filter(t => t.from && t.to))
     : [];
   const subtitle = `${hi + 1}번 홀 정산`;
 
@@ -1742,6 +1775,39 @@ function deletePlayer(id) {
   if(!confirm('플레이어를 삭제하시겠습니까?')) return;
   state.players = state.players.filter(p => p.id !== id);
   saveState();
+  renderPlayers();
+}
+
+function openEditPlayerModal(id) {
+  const p = state.players.find(pl => pl.id === id);
+  if(!p) return;
+  openModal(`
+    <div class="modal-title">✏️ 플레이어 수정</div>
+    <div class="input-group">
+      <label class="input-label">이름 *</label>
+      <input class="input-field" id="editPlayerName" placeholder="홍길동" maxlength="10" value="${p.name}">
+    </div>
+    <div class="input-group">
+      <label class="input-label">핸디캡 (선택)</label>
+      <input class="input-field input-number" id="editPlayerHandicap" type="number" min="0" max="36" placeholder="0" value="${p.handicap ?? ''}">
+    </div>
+    <button class="btn btn-primary btn-full" onclick="savePlayerEdit('${id}')" style="margin-top:8px">저장</button>
+  `);
+  setTimeout(() => document.getElementById('editPlayerName')?.focus(), 300);
+}
+
+function savePlayerEdit(id) {
+  const p = state.players.find(pl => pl.id === id);
+  if(!p) return;
+  const name = document.getElementById('editPlayerName')?.value?.trim();
+  if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
+  if(state.players.find(pl => pl.name === name && pl.id !== id)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
+  const hc = document.getElementById('editPlayerHandicap')?.value;
+  p.name = name;
+  p.handicap = hc ? Number(hc) : null;
+  saveState();
+  closeModalForce();
+  showToast(`✅ ${name} 수정 완료!`);
   renderPlayers();
 }
 
@@ -2067,6 +2133,115 @@ function createMatch() {
   showToast(`⛳ ${course} 경기 시작!`);
   state.currentTab = 'scorecard';
   render();
+}
+
+let editingMatchId = null;
+
+function openEditMatchModal(id) {
+  const m = state.matches.find(x => x.id === id);
+  if(!m) return;
+  editingMatchId = id;
+
+  const rule = m.bettingRule || {};
+  matchBetMode = rule.mode || state.settings.betMode;
+  matchBirdieBonus = rule.birdieBonus ?? false;
+  matchDoubleParBonus = rule.doubleParBonus ?? false;
+  matchAllTieDouble = rule.allTieDouble ?? false;
+  matchBirdieExempt = [...(rule.birdieExempt ?? [])];
+  matchDoubleParExempt = [...(rule.doubleParExempt ?? [])];
+  selectedPlayers = [...m.playerIds];
+
+  openModal(`
+    <div class="modal-title">✏️ 경기 수정</div>
+    <div class="input-group">
+      <label class="input-label">코스명 *</label>
+      <input class="input-field" id="editMatchCourse" placeholder="파인밸리 CC" value="${m.course}">
+    </div>
+    <div class="input-group">
+      <label class="input-label">날짜</label>
+      <input class="input-field" id="editMatchDate" type="date" value="${m.date}">
+    </div>
+    <div class="input-group">
+      <label class="input-label">내기 방식</label>
+      <div class="toggle-wrapper" id="matchBetModeToggle">
+        <button class="toggle-btn ${matchBetMode==='diff'?'active':''}" onclick="toggleMatchMode('diff')">타수차</button>
+        <button class="toggle-btn ${matchBetMode==='skin'?'active':''}" onclick="toggleMatchMode('skin')">스킨</button>
+      </div>
+    </div>
+    <div class="input-group">
+      <label class="input-label">기본 금액 (원)</label>
+      <input class="input-field input-number" id="editMatchAmount" type="number" value="${rule.baseAmount ?? state.settings.baseAmount}" min="100" step="500">
+    </div>
+    <div class="input-group">
+      <label class="input-label">보너스 배율 규칙</label>
+      <div style="display:flex;gap:8px">
+        <button id="bonusBirdieBtn" onclick="toggleMatchBonus('birdie')"
+          style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid ${matchBirdieBonus?'var(--gold)':'var(--border)'};background:${matchBirdieBonus?'rgba(212,168,67,0.12)':'var(--white)'};font-size:13px;font-weight:600;cursor:pointer;color:${matchBirdieBonus?'var(--gold)':'var(--text-mid)'};transition:all 0.15s">
+          🦅 버디 ×2
+        </button>
+        <button id="bonusDoubleParBtn" onclick="toggleMatchBonus('doublePar')"
+          style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid ${matchDoubleParBonus?'#c0392b':'var(--border)'};background:${matchDoubleParBonus?'rgba(192,57,43,0.1)':'var(--white)'};font-size:13px;font-weight:600;cursor:pointer;color:${matchDoubleParBonus?'#c0392b':'var(--text-mid)'};transition:all 0.15s">
+          💀 더블파 ×2
+        </button>
+        <button id="bonusAllTieBtn" onclick="toggleMatchBonus('allTie')"
+          style="flex:1;padding:10px 8px;border-radius:8px;border:2px solid ${matchAllTieDouble?'#2980b9':'var(--border)'};background:${matchAllTieDouble?'rgba(41,128,185,0.1)':'var(--white)'};font-size:13px;font-weight:600;cursor:pointer;color:${matchAllTieDouble?'#2980b9':'var(--text-mid)'};transition:all 0.15s">
+          🤝 올타이 ×2
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:6px">버디/더블파 중복 시 최대 ×3 · 올타이는 다음 홀에 적용</div>
+    </div>
+    <div class="input-group">
+      <label class="input-label">참가자</label>
+      <div id="bonusExemptSection" style="${(matchBirdieBonus||matchDoubleParBonus)?'':'display:none'};margin-top:0;padding:10px 12px;background:#fffbf0;border-radius:8px;border:1px solid rgba(212,168,67,0.3)"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-full" onclick="deleteMatchConfirm('${id}')"
+        style="flex:1;background:#fef2f2;color:#c0392b;border:1.5px solid #c0392b;font-weight:700;padding:13px">
+        🗑 삭제
+      </button>
+      <button class="btn btn-gold btn-full" onclick="saveMatchEdit()" style="flex:2;font-size:16px;padding:13px">
+        저장
+      </button>
+    </div>
+  `);
+  refreshBonusExemptSection();
+}
+
+function saveMatchEdit() {
+  const m = state.matches.find(x => x.id === editingMatchId);
+  if(!m) return;
+  const course = document.getElementById('editMatchCourse')?.value?.trim();
+  if(!course) { showToast('⚠️ 코스명을 입력하세요'); return; }
+  const date = document.getElementById('editMatchDate')?.value || m.date;
+  const amount = Number(document.getElementById('editMatchAmount')?.value) || (m.bettingRule?.baseAmount ?? state.settings.baseAmount);
+
+  m.course = course;
+  m.date = date;
+  m.bettingRule = {
+    ...m.bettingRule,
+    mode: matchBetMode,
+    baseAmount: amount,
+    birdieBonus: matchBirdieBonus,
+    doubleParBonus: matchDoubleParBonus,
+    allTieDouble: matchAllTieDouble,
+    birdieExempt: [...matchBirdieExempt],
+    doubleParExempt: [...matchDoubleParExempt]
+  };
+
+  saveState();
+  closeModalForce();
+  showToast('✅ 경기 수정 완료!');
+  renderMatches();
+}
+
+function deleteMatchConfirm(id) {
+  if(!confirm('경기를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return;
+  state.matches = state.matches.filter(m => m.id !== id);
+  if(state.activeMatchId === id) state.activeMatchId = null;
+  saveState();
+  closeModalForce();
+  showToast('🗑 경기 삭제 완료');
+  renderMatches();
 }
 
 // ================================================================
