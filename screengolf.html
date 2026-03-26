@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.9.1';
+const APP_VERSION = 'v1.9.2';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1566,7 +1566,7 @@ function adjustScore(pid, hi, delta) {
   if (!match) return;
   const current = match.scores?.[pid]?.[hi];
   const base = (current !== '' && current !== null && current !== undefined) ? Number(current) : state.settings.par[hi];
-  const newVal = Math.max(1, base + delta);
+  const newVal = Math.max(1, Math.min(state.settings.par[hi] * 2, base + delta));
   if (!match.scores) match.scores = {};
   if (!match.scores[pid]) match.scores[pid] = [...state.settings.par];
   match.scores[pid][hi] = newVal;
