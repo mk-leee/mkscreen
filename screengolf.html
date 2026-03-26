@@ -1068,6 +1068,7 @@ function calcPlayerTotals(match) {
 
 /** 18홀 입력 완료 여부 */
 function isMatchComplete(match) {
+  if (match.enteredHoles?.length === 18) return true;
   if(!match.scores) return false;
   return match.playerIds.every(pid => {
     const sc = match.scores[pid];
@@ -1075,12 +1076,15 @@ function isMatchComplete(match) {
   });
 }
 
-/** 파에서 조정된 홀 수 (진행률용) */
+/** 입력(저장)된 홀 수 (진행률용) */
 function countEnteredHoles(match) {
-  if(!match.scores || !match.playerIds.length) return 0;
-  // 어느 한 플레이어라도 파와 다른 타수를 기록한 홀 수
+  if(!match.playerIds.length) return 0;
+  const enteredSet = new Set(match.enteredHoles ?? []);
+  // 명시적 저장 or 파와 다른 타수가 있는 홀
   let count = 0;
   for (let hi = 0; hi < 18; hi++) {
+    if (enteredSet.has(hi)) { count++; continue; }
+    if (!match.scores) continue;
     const par = state.settings.par[hi];
     const adjusted = match.playerIds.some(pid => {
       const sc = match.scores[pid]?.[hi];
@@ -1270,8 +1274,9 @@ function renderScorecard() {
   const par = state.settings.par[hi];
 
   // 진행 점 (18개)
+  const enteredSet = new Set(match.enteredHoles ?? []);
   const dots = Array.from({length: 18}, (_, i) => {
-    const adjusted = players.some(p => Number(match.scores[p.id]?.[i]) !== state.settings.par[i]);
+    const adjusted = enteredSet.has(i) || players.some(p => Number(match.scores[p.id]?.[i]) !== state.settings.par[i]);
     const isCur = i === hi;
     return `<div class="hole-dot${adjusted?' adjusted':''}${isCur?' current':''}" onclick="goHole(${i})" title="${i+1}번"></div>`;
   }).join('');
@@ -1745,7 +1750,14 @@ function adjustHolePar(hi, delta) {
   showToast(`${hi+1}번 홀 파 → ${newPar}`);
 }
 
+function markHoleEntered(match, hi) {
+  if (!match.enteredHoles) match.enteredHoles = [];
+  if (!match.enteredHoles.includes(hi)) match.enteredHoles.push(hi);
+}
+
 function saveAndNextHole() {
+  const match = state.matches.find(m => m.id === state.activeMatchId);
+  if (match) markHoleEntered(match, state.activeHole ?? 0);
   saveState();
   showToast('✅ 저장됨');
   goHole((state.activeHole ?? 0) + 1);
@@ -1794,7 +1806,8 @@ function adjustScore(pid, hi, delta) {
   const players = match.playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
   const dotEl = document.querySelector(`.hole-dot:nth-child(${hi + 1})`);
   if (dotEl) {
-    const adjusted = players.some(p => Number(match.scores[p.id]?.[hi]) !== state.settings.par[hi]);
+    const isEntered = (match.enteredHoles ?? []).includes(hi);
+    const adjusted = isEntered || players.some(p => Number(match.scores[p.id]?.[hi]) !== state.settings.par[hi]);
     dotEl.classList.toggle('adjusted', adjusted);
   }
   // 배율 뱃지 업데이트
@@ -1825,6 +1838,8 @@ function updateScore(pid, holeIdx, val) {
 }
 
 function saveScores() {
+  const match = state.matches.find(m => m.id === state.activeMatchId);
+  if (match) markHoleEntered(match, state.activeHole ?? 0);
   saveState();
   showToast('✅ 스코어 저장 완료!');
 
