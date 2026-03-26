@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.9.2';
+const APP_VERSION = 'v1.9.3';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -901,11 +901,11 @@ function calcHoleResults(match) {
         holeScores.forEach(s => {
           amounts[s.pid] = s.pid === winners[0].pid ? skinPot - loseAmt : -loseAmt;
         });
-        results.push({ hole: h+1, winnerId: winners[0].pid, scores: holeScores, amounts, carried: skinPot - base * multiplier, multiplier });
+        results.push({ hole: h+1, winnerId: winners[0].pid, winnerIds: [winners[0].pid], scores: holeScores, amounts, carried: skinPot - base * multiplier, multiplier });
         skinPot = 0;
       } else {
         // 타이: 이월
-        results.push({ hole: h+1, winnerId: null, tie: true, scores: holeScores, amounts: {}, carried: skinPot - base * multiplier, multiplier });
+        results.push({ hole: h+1, winnerId: null, winnerIds: [], tie: true, scores: holeScores, amounts: {}, carried: skinPot, multiplier });
       }
     } else {
       // 타수 차이 방식: 각 타수 차이 × base × multiplier
@@ -922,10 +922,11 @@ function calcHoleResults(match) {
       // 0-sum 보정
       const total = Object.values(amounts).reduce((a,b) => a+b, 0);
       if(winners.length > 0) {
-        const bonus = -total / winners.length;
-        winners.forEach(w => { amounts[w.pid] += bonus; });
+        const bonusBase = Math.floor(-total / winners.length);
+        const remainder = -total - bonusBase * winners.length;
+        winners.forEach((w, i) => { amounts[w.pid] += bonusBase + (i === 0 ? remainder : 0); });
       }
-      results.push({ hole: h+1, winnerId: winners.length === 1 ? winners[0].pid : null, tie: winners.length > 1, scores: holeScores, amounts, carried: 0, multiplier });
+      results.push({ hole: h+1, winnerId: winners.length === 1 ? winners[0].pid : null, winnerIds: winners.map(w => w.pid), tie: winners.length > 1, scores: holeScores, amounts, carried: 0, multiplier });
     }
   }
 
@@ -959,7 +960,7 @@ function calcPlayerTotals(match) {
   holeResults.forEach(hr => {
     match.playerIds.forEach(pid => {
       if(hr.amounts[pid]) totals[pid].amount += hr.amounts[pid];
-      if(hr.winnerId === pid) totals[pid].wins += 1;
+      if(hr.winnerIds ? hr.winnerIds.includes(pid) : hr.winnerId === pid) totals[pid].wins += 1;
       const sc = match.scores?.[pid]?.[hr.hole-1];
       if(sc !== '' && sc !== null && sc !== undefined) totals[pid].score += Number(sc);
     });
