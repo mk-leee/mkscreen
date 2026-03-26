@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.1';
+const APP_VERSION = 'v2.1.2';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1110,6 +1110,7 @@ function switchTab(tab) {
 
 // ---- 경기 탭 ----
 function renderMatches() {
+  clearSwipeHandlers();
   const mc = document.getElementById('mainContent');
   const hdr = document.getElementById('headerActions');
   hdr.innerHTML = `<button class="btn btn-gold btn-sm" onclick="openNewMatchModal()">+ 경기 추가</button>`;
@@ -1180,6 +1181,7 @@ function renderMatchCard(m) {
 
 // ---- 플레이어 탭 ----
 function renderPlayers() {
+  clearSwipeHandlers();
   const mc = document.getElementById('mainContent');
   const hdr = document.getElementById('headerActions');
   hdr.innerHTML = `<button class="btn btn-primary btn-sm" onclick="openAddPlayerModal()">+ 추가</button>`;
@@ -1352,20 +1354,11 @@ function renderScorecard() {
         : `<button class="btn btn-gold" style="flex:2;font-size:15px" onclick="switchTab('results')">💰 결과 보기</button>`}
     </div>`;
 
-  // 스와이프 좌우로 홀 이동 (세로 스크롤 시 오작동 방지)
-  let _tx = 0, _ty = 0;
-  mc.addEventListener('touchstart', e => {
-    _tx = e.touches[0].clientX;
-    _ty = e.touches[0].clientY;
-  }, { passive: true });
-  mc.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - _tx;
-    const dy = e.changedTouches[0].clientY - _ty;
-    if (Math.abs(dx) < 50) return;
-    if (Math.abs(dy) > Math.abs(dx)) return; // 세로 이동이 더 크면 스크롤로 간주
-    if (dx < 0 && hi < 17) goHole(hi + 1);
-    else if (dx > 0 && hi > 0) goHole(hi - 1);
-  }, { passive: true });
+  // 스와이프 좌우로 홀 이동
+  attachSwipe(
+    () => { if (hi < 17) goHole(hi + 1); },
+    () => { if (hi > 0)  goHole(hi - 1); }
+  );
 }
 
 // ---- 결과 탭 ----
@@ -1516,10 +1509,19 @@ function renderResults() {
     </div>
 
     <div style="height:20px"></div>`;
+
+  // 결과 화면 스와이프: 이전/다음 경기 이동
+  const matchIds = state.matches.map(m => m.id);
+  const curIdx = matchIds.indexOf(state.activeMatchId);
+  attachSwipe(
+    () => { if (curIdx < matchIds.length - 1) { state.activeMatchId = matchIds[curIdx + 1]; renderResults(); } },
+    () => { if (curIdx > 0) { state.activeMatchId = matchIds[curIdx - 1]; renderResults(); } }
+  );
 }
 
 // ---- 설정 탭 ----
 function renderSettings() {
+  clearSwipeHandlers();
   const mc = document.getElementById('mainContent');
   const hdr = document.getElementById('headerActions');
   hdr.innerHTML = '';
@@ -2057,6 +2059,34 @@ function addPlayerFromMatch() {
 
   showToast(`✅ ${name} 등록 완료!`);
   renderPlayers();
+}
+
+// 스와이프 핸들러 전역 관리 (탭 전환 시 이전 핸들러 제거용)
+let _swipeStart = null;
+let _swipeEnd = null;
+function clearSwipeHandlers() {
+  const mc = document.getElementById('mainContent');
+  if (!mc) return;
+  if (_swipeStart) mc.removeEventListener('touchstart', _swipeStart, { passive: true });
+  if (_swipeEnd)   mc.removeEventListener('touchend',   _swipeEnd,   { passive: true });
+  _swipeStart = null;
+  _swipeEnd   = null;
+}
+function attachSwipe(onLeft, onRight) {
+  clearSwipeHandlers();
+  const mc = document.getElementById('mainContent');
+  if (!mc) return;
+  let tx = 0, ty = 0;
+  _swipeStart = e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; };
+  _swipeEnd   = e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    const dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) onLeft?.();
+    else        onRight?.();
+  };
+  mc.addEventListener('touchstart', _swipeStart, { passive: true });
+  mc.addEventListener('touchend',   _swipeEnd,   { passive: true });
 }
 
 let selectedPlayers = [];
