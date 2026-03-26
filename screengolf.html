@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.5';
+const APP_VERSION = 'v2.1.6';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1473,11 +1473,23 @@ function renderResults() {
       </table>
     </div>
 
-    <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin-bottom:10px">${mode === 'friendly' ? '🏆 순위' : '💰 정산 결과'}</div>
-    ${ranked.map((p, i) => {
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark)">${mode === 'friendly' ? '🏆 순위' : '💰 정산 결과'}</div>
+      ${mode !== 'friendly' ? `
+      <div style="display:flex;gap:4px">
+        <button onclick="setResultSort('score')" id="sortByScore"
+          style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${resultSortMode==='score'?'var(--green-dark)':'var(--border)'};background:${resultSortMode==='score'?'var(--green-dark)':'white'};color:${resultSortMode==='score'?'white':'var(--text-mid)'}">타수</button>
+        <button onclick="setResultSort('amount')" id="sortByAmount"
+          style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${resultSortMode==='amount'?'var(--green-dark)':'var(--border)'};background:${resultSortMode==='amount'?'var(--green-dark)':'white'};color:${resultSortMode==='amount'?'white':'var(--text-mid)'}">금액</button>
+      </div>` : ''}
+    </div>
+    ${(resultSortMode === 'amount' && mode !== 'friendly'
+        ? [...players].sort((a,b) => (totals[b.id]?.amount||0) - (totals[a.id]?.amount||0))
+        : ranked
+      ).map((p, i) => {
       const ci = state.players.findIndex(pl => pl.id === p.id) % 4;
       const t = totals[p.id] || { amount: 0, wins: 0, score: 0 };
-      const rankIdx = i;
+      const rankIdx = ranked.findIndex(r => r.id === p.id);
       return `
         <div class="result-player-card">
           <div class="result-rank ${rankIdx < 3 ? `rank-${rankIdx+1}` : ''}">${rankNums[rankIdx] || rankIdx+1}</div>
@@ -2146,6 +2158,9 @@ function attachSwipe(onLeft, onRight) {
   mc.addEventListener('touchstart', _swipeStart, { passive: true });
   mc.addEventListener('touchend',   _swipeEnd,   { passive: true });
 }
+
+let resultSortMode = 'score';  // 정산결과 정렬: 'score' | 'amount'
+function setResultSort(mode) { resultSortMode = mode; renderResults(); }
 
 let selectedPlayers = [];
 let matchBetMode = state.settings.betMode;
