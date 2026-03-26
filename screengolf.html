@@ -1450,7 +1450,8 @@ function renderResults() {
     }).join('')}
 
     ${(() => {
-      const hcTxns = calcHandicapTxns(match);
+      const hcTxns = calcHandicapTxns(match)
+        .sort((a, b) => a.from.name.localeCompare(b.from.name, 'ko'));
       if (!hcTxns.length) return '';
       const rows = hcTxns.map(tx => {
         const fci = state.players.findIndex(p => p.id === tx.from.id) % 4;
