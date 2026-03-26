@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.0';
+const APP_VERSION = 'v2.1.1';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1408,10 +1408,11 @@ function renderResults() {
       ${(match.bettingRule?.birdieBonus || match.bettingRule?.doubleParBonus || match.bettingRule?.allTieDouble) ? (() => {
         const birdieExemptNames = (match.bettingRule?.birdieExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
         const doubleParExemptNames = (match.bettingRule?.doubleParExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
+        const allTieExemptNames = (match.bettingRule?.allTieExempt ?? []).map(id => state.players.find(p => p.id === id)?.name).filter(Boolean);
         return `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           ${match.bettingRule?.birdieBonus ? `<span style="font-size:11px;background:rgba(212,168,67,0.15);color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:2px 7px;font-weight:600">🦅 버디 ×2${birdieExemptNames.length ? ` <span style="font-weight:400">(${birdieExemptNames.join('·')} 예외)</span>` : ''}</span>` : ''}
           ${match.bettingRule?.doubleParBonus ? `<span style="font-size:11px;background:rgba(192,57,43,0.1);color:#c0392b;border:1px solid #c0392b;border-radius:4px;padding:2px 7px;font-weight:600">💀 더블파 ×2${doubleParExemptNames.length ? ` <span style="font-weight:400">(${doubleParExemptNames.join('·')} 예외)</span>` : ''}</span>` : ''}
-          ${match.bettingRule?.allTieDouble ? `<span style="font-size:11px;background:rgba(41,128,185,0.1);color:#2980b9;border:1px solid #2980b9;border-radius:4px;padding:2px 7px;font-weight:600">🤝 올타이 다음홀 ×2</span>` : ''}
+          ${match.bettingRule?.allTieDouble ? `<span style="font-size:11px;background:rgba(41,128,185,0.1);color:#2980b9;border:1px solid #2980b9;border-radius:4px;padding:2px 7px;font-weight:600">🤝 올타이 다음홀 ×2${allTieExemptNames.length ? ` <span style="font-weight:400">(${allTieExemptNames.join('·')} 예외)</span>` : ''}</span>` : ''}
           <span style="font-size:11px;color:var(--text-light)">중복 최대 ×3</span>
         </div>`;
       })() : ''}
