@@ -826,6 +826,11 @@ const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
 const COLOR_HEX = ['#2ecc71','#3498db','#e74c3c','#9b59b6'];
 let _editPlayerColorIdx = 0;
+function nextAvailableColorIndex() {
+  const used = new Set(state.players.map(p => p.colorIndex ?? (state.players.indexOf(p) % 4)));
+  for (let i = 0; i < COLOR_HEX.length; i++) { if (!used.has(i)) return i; }
+  return state.players.length % 4;
+}
 function playerCI(id) {
   const p = state.players.find(pl => pl.id === id);
   if (!p) return 0;
@@ -2048,7 +2053,7 @@ function addPlayer() {
   if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
   if(state.players.find(p => p.name === name)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
   const hc = document.getElementById('newPlayerHandicap')?.value;
-  state.players.push({ id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: state.players.length % 4 });
+  state.players.push({ id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: nextAvailableColorIndex() });
   saveState();
   closeModalForce();
   showToast(`✅ ${name} 등록 완료!`);
@@ -2170,7 +2175,7 @@ function addPlayerFromMatch() {
   if(!name) { showToast('⚠️ 이름을 입력하세요'); return; }
   if(state.players.find(p => p.name === name)) { showToast('⚠️ 이미 같은 이름이 있습니다'); return; }
   const hc = document.getElementById('inlinePlayerHc')?.value;
-  const newPlayer = { id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: state.players.length % 4 };
+  const newPlayer = { id: uid(), name, handicap: hc ? Number(hc) : null, colorIndex: nextAvailableColorIndex() };
   state.players.push(newPlayer);
   saveState();
 
