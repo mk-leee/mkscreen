@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.3';
+const APP_VERSION = 'v2.1.4';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1328,6 +1328,10 @@ function renderScorecard() {
 
   mc.innerHTML = `
     <div style="background:linear-gradient(160deg,var(--green-dark),var(--green-mid));border-radius:16px;padding:16px 16px 12px;margin-bottom:12px">
+      <div style="text-align:center;margin-bottom:8px">
+        <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:white;opacity:0.95;letter-spacing:0.3px">${match.course}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:1px">${formatDate(match.date)}</div>
+      </div>
       <div class="hole-input-header">
         <button class="hole-nav-btn" onclick="goHole(${hi-1})" ${hi===0?'disabled':''}>‹</button>
         <div class="hole-number-display">
