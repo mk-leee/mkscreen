@@ -1845,8 +1845,6 @@ function saveScores() {
 
   const panel = document.getElementById('settlementPanel');
   if (!panel) return;
-
-  const match = state.matches.find(m => m.id === state.activeMatchId);
   if (!match) return;
 
   const players = match.playerIds.map(pid => state.players.find(p => p.id === pid)).filter(Boolean);
