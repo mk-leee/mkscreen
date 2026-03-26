@@ -819,7 +819,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v1.8.0';
+const APP_VERSION = 'v1.8.1';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1233,6 +1233,16 @@ function renderScorecard() {
         ? `<button class="btn btn-gold" style="flex:2;font-size:15px" onclick="saveAndNextHole()">다음 홀 ${hi+2}번 →</button>`
         : `<button class="btn btn-gold" style="flex:2;font-size:15px" onclick="switchTab('results')">💰 결과 보기</button>`}
     </div>`;
+
+  // 스와이프 좌우로 홀 이동
+  let _tx = 0;
+  mc.addEventListener('touchstart', e => { _tx = e.touches[0].clientX; }, { passive: true });
+  mc.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - _tx;
+    if (Math.abs(dx) < 50) return;
+    if (dx < 0 && hi < 17) goHole(hi + 1);
+    else if (dx > 0 && hi > 0) goHole(hi - 1);
+  }, { passive: true });
 }
 
 // ---- 결과 탭 ----
@@ -1485,7 +1495,19 @@ function renderTab(tab) {
 
 function openMatch(id) {
   state.activeMatchId = id;
-  state.activeHole = 0;
+  // 마지막으로 조정된 홀 다음으로 이동 (없으면 0번)
+  const match = state.matches.find(m => m.id === id);
+  if (match) {
+    let lastAdjusted = -1;
+    for (let hi = 0; hi < 18; hi++) {
+      const par = state.settings.par[hi];
+      const adjusted = match.playerIds.some(pid => Number(match.scores?.[pid]?.[hi]) !== par);
+      if (adjusted) lastAdjusted = hi;
+    }
+    state.activeHole = Math.min(17, lastAdjusted + 1);
+  } else {
+    state.activeHole = 0;
+  }
   state.currentTab = 'scorecard';
   render();
 }
@@ -1903,6 +1925,7 @@ function createMatch() {
   selectedPlayers.forEach(pid => { match.scores[pid] = [...state.settings.par]; });
   state.matches.push(match);
   state.activeMatchId = match.id;
+  state.activeHole = 0;
   selectedPlayers = [];
   saveState();
   closeModalForce();
