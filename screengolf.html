@@ -2137,8 +2137,8 @@ let _swipeEnd = null;
 function clearSwipeHandlers() {
   const mc = document.getElementById('mainContent');
   if (!mc) return;
-  if (_swipeStart) mc.removeEventListener('touchstart', _swipeStart, { passive: true });
-  if (_swipeEnd)   mc.removeEventListener('touchend',   _swipeEnd,   { passive: true });
+  if (_swipeStart) mc.removeEventListener('touchstart', _swipeStart);
+  if (_swipeEnd)   mc.removeEventListener('touchend',   _swipeEnd);
   _swipeStart = null;
   _swipeEnd   = null;
 }
