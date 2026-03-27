@@ -2644,37 +2644,6 @@ function showToast(msg) {
 // 초기화
 // ================================================================
 
-// 샘플 데이터 (처음 실행 시)
-if(!state.players.length && !state.matches.length) {
-  state.players = [
-    { id: 'p1', name: '김민준', handicap: 5 },
-    { id: 'p2', name: '이서연', handicap: null },
-    { id: 'p3', name: '박도윤', handicap: 12 },
-    { id: 'p4', name: '최하은', handicap: 8 },
-  ];
-
-  // 샘플 경기 (일부 스코어 입력된 상태)
-  const sampleScores = {
-    p1: [4,3,5,4,4,3,5,4,4,  4,3,5,4,4,3,5,4,4],
-    p2: [5,4,4,5,3,4,4,5,5,  5,4,4,5,3,4,4,5,5],
-    p3: [4,4,4,4,4,4,4,4,4,  4,4,4,4,4,4,4,4,4],
-    p4: [3,3,5,4,5,3,5,3,4,  3,3,5,4,5,3,5,3,4],
-  };
-
-  state.matches = [{
-    id: 'm1',
-    date: new Date().toISOString().split('T')[0],
-    course: '파인밸리 CC',
-    playerIds: ['p1','p2','p3','p4'],
-    bettingRule: { mode: 'diff', baseAmount: 1000 },
-    scores: sampleScores,
-    done: false
-  }];
-
-  state.activeMatchId = 'm1';
-  saveState();
-}
-
 render();
 document.getElementById('appVersionBadge').textContent = APP_VERSION;
 </script>
