@@ -820,7 +820,7 @@
 // ================================================================
 // 데이터 구조 & 상태
 // ================================================================
-const APP_VERSION = 'v2.1.6';
+const APP_VERSION = 'v2.2.0';
 
 const PLAYER_COLORS = ['pc-0','pc-1','pc-2','pc-3'];
 const PLAYER_BG_COLORS = ['pc-bg-0','pc-bg-1','pc-bg-2','pc-bg-3'];
@@ -1573,9 +1573,8 @@ function renderResults() {
         const holeWinners = minScore !== null
           ? validScores.filter(s => s.score === minScore).map(s => state.players.find(p => p.id === s.pid)).filter(Boolean)
           : [];
-        const isTie = holeWinners.length !== 1;
-        const singleWinner = !isTie ? holeWinners[0] : null;
-        const winnerColor = singleWinner ? playerColor(singleWinner.id) : COLOR_HEX[0];
+        // 올타이: 모든 입력된 플레이어가 같은 점수
+        const isAllTie = holeWinners.length === validScores.length && validScores.length > 1;
 
         // 타수 뱃지: 기준타수 대비 +/-
         const scoreBadges = hr.scores.map(s => {
@@ -1610,9 +1609,9 @@ function renderResults() {
                 <div style="font-size:12px;margin-bottom:4px">
                   ${validScores.length === 0
                     ? `<span style="color:var(--text-light)">미입력</span>`
-                    : isTie
+                    : isAllTie
                       ? `<span style="color:var(--text-light)">⚖️ 타이 ${mode==="skin"?"(이월)":"(무승부)"}</span>`
-                      : `<span style="color:${winnerColor};font-weight:700">🏆 ${singleWinner.name}</span>`}
+                      : `<span style="font-weight:700">🏆 ${holeWinners.map(w => `<span style="color:${playerColor(w.id)}">${w.name}</span>`).join(' · ')}</span>`}
                   ${hr.carried > 0 ? `<span style="font-size:11px;color:var(--gold);margin-left:4px">팟 ${hr.carried.toLocaleString()}↑</span>` : ''}
                 ${hr.allTieMult > 1 ? `<span style="font-size:11px;color:#2980b9;margin-left:4px;font-weight:700">🤝×${hr.allTieMult}</span>` : ''}
                 </div>
