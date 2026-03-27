@@ -1565,13 +1565,26 @@ function renderResults() {
     <div style="font-family:'Black Han Sans',sans-serif;font-size:15px;color:var(--green-dark);margin:20px 0 10px">📊 홀별 내역</div>
     <div class="card" style="padding:0;overflow:hidden">
       ${holeResults.filter(hr => hr.scores.length >= 2).map(hr => {
-        const winner = hr.winnerId ? state.players.find(p => p.id === hr.winnerId) : null;
-        const winnerColor = winner ? playerColor(winner.id) : COLOR_HEX[0];
+        const holePar = state.settings.par[hr.hole - 1];
+
+        // 최저타수 기준 승리자 계산
+        const validScores = hr.scores.filter(s => s.score > 0);
+        const minScore = validScores.length > 0 ? Math.min(...validScores.map(s => s.score)) : null;
+        const holeWinners = minScore !== null
+          ? validScores.filter(s => s.score === minScore).map(s => state.players.find(p => p.id === s.pid)).filter(Boolean)
+          : [];
+        const isTie = holeWinners.length !== 1;
+        const singleWinner = !isTie ? holeWinners[0] : null;
+        const winnerColor = singleWinner ? playerColor(singleWinner.id) : COLOR_HEX[0];
+
+        // 타수 뱃지: 기준타수 대비 +/-
         const scoreBadges = hr.scores.map(s => {
           const pp = state.players.find(pl => pl.id === s.pid);
           const sc2 = playerColor(s.pid);
           const amt = hr.amounts[s.pid];
-          return `<span style="font-size:12px;padding:2px 6px;border-radius:8px;background:${sc2}22;color:${sc2};font-weight:600">${pp?.name||'?'} ${s.score}타${(mode !== 'friendly' && amt) ? ` (${amt > 0 ? '+' : ''}${Math.round(amt).toLocaleString()})` : ''}</span>`;
+          const diff = s.score > 0 ? s.score - holePar : null;
+          const diffStr = diff === null ? '-' : diff === 0 ? 'E' : diff > 0 ? `+${diff}` : `${diff}`;
+          return `<span style="font-size:12px;padding:2px 6px;border-radius:8px;background:${sc2}22;color:${sc2};font-weight:600">${pp?.name||'?'} ${diffStr}${(mode !== 'friendly' && amt) ? ` (${amt > 0 ? '+' : ''}${Math.round(amt).toLocaleString()})` : ''}</span>`;
         }).join('');
 
         // 홀 정산 내역: 모든 페어 직접 정산
@@ -1595,8 +1608,11 @@ function renderResults() {
               <div class="hole-num" style="flex-shrink:0">${hr.hole}</div>
               <div style="flex:1">
                 <div style="font-size:12px;margin-bottom:4px">
-                  ${hr.tie ? `<span style="color:var(--text-light)">⚖️ 타이 ${mode==="skin"?"(이월)":"(무승부)"}</span>` :
-                    winner ? `<span style="color:${winnerColor};font-weight:700">🏆 ${winner.name}</span>` : '<span style="color:var(--text-light)">미입력</span>'}
+                  ${validScores.length === 0
+                    ? `<span style="color:var(--text-light)">미입력</span>`
+                    : isTie
+                      ? `<span style="color:var(--text-light)">⚖️ 타이 ${mode==="skin"?"(이월)":"(무승부)"}</span>`
+                      : `<span style="color:${winnerColor};font-weight:700">🏆 ${singleWinner.name}</span>`}
                   ${hr.carried > 0 ? `<span style="font-size:11px;color:var(--gold);margin-left:4px">팟 ${hr.carried.toLocaleString()}↑</span>` : ''}
                 ${hr.allTieMult > 1 ? `<span style="font-size:11px;color:#2980b9;margin-left:4px;font-weight:700">🤝×${hr.allTieMult}</span>` : ''}
                 </div>
