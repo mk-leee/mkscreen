@@ -1242,7 +1242,7 @@ function renderPlayers() {
             <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
               <span style="font-size:12px;color:var(--text-light)">핸디</span>
               <input type="number" min="0" max="54" step="0.1"
-                value="${p.handicap || 0}"
+                value="${Number(p.handicap || 0).toFixed(1)}"
                 style="width:54px;padding:2px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;text-align:center"
                 onclick="event.stopPropagation()"
                 onchange="updatePlayerHandicap('${p.id}', this.value)">
@@ -1331,12 +1331,21 @@ function renderScorecard() {
     }, 0);
     const totalRelStr = totalRel === 0 ? 'E' : (totalRel > 0 ? `+${totalRel}` : `${totalRel}`);
     const totalRelColor = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
+    const totalScore = state.settings.par.reduce((sum, _, h) => {
+      const s = Number(match.scores[p.id]?.[h]);
+      return (s > 0) ? sum + s : sum;
+    }, 0);
     return `
       <div class="player-score-row">
         <div style="width:42px;height:42px;border-radius:50%;background:${pcolor};display:flex;align-items:center;justify-content:center;color:white;font-family:'Black Han Sans',sans-serif;font-size:17px;flex-shrink:0">${p.name[0]}</div>
         <div class="ps-info">
-          <div class="ps-name">${p.name}<span id="totalRel_${p.id}" style="font-size:11px;font-weight:700;margin-left:6px;color:${totalRelColor}">${totalRelStr}</span></div>
-          <div class="ps-rel" id="rel_${p.id}_${hi}">${relLabel}</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-weight:700;font-size:16px;color:var(--text-dark)">${p.name}</span>
+            <span id="totalRel_${p.id}" style="font-size:12px;font-weight:700;padding:1px 7px;border-radius:10px;background:${totalRelColor}1a;color:${totalRelColor}">${totalRelStr}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:3px">
+            총 <span id="totalScore_${p.id}">${totalScore > 0 ? totalScore + '타' : '-'}</span> · 이번홀 <span id="rel_${p.id}_${hi}">${relLabel}</span>
+          </div>
         </div>
         <div class="big-stepper">
           <button class="big-stepper-btn" style="color:${pcolor};background:${pcolor}18" onclick="adjustScore('${p.id}',${hi},-1)">－</button>
@@ -1839,13 +1848,19 @@ function adjustScore(pid, hi, delta) {
   }
   // 누적 타수 대비 파 업데이트
   const totalRelEl = document.getElementById(`totalRel_${pid}`);
+  const totalScoreEl = document.getElementById(`totalScore_${pid}`);
   if (totalRelEl) {
-    const totalRel = state.settings.par.reduce((sum, hpar, h) => {
+    let totalRel = 0, tScore = 0;
+    state.settings.par.forEach((hpar, h) => {
       const s = Number(match.scores[pid]?.[h]);
-      return (s > 0) ? sum + s - hpar : sum;
-    }, 0);
-    totalRelEl.textContent = totalRel === 0 ? 'E' : (totalRel > 0 ? `+${totalRel}` : `${totalRel}`);
-    totalRelEl.style.color = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
+      if (s > 0) { totalRel += s - hpar; tScore += s; }
+    });
+    const tStr = totalRel === 0 ? 'E' : (totalRel > 0 ? `+${totalRel}` : `${totalRel}`);
+    const tColor = totalRel < 0 ? '#2980b9' : totalRel > 0 ? 'var(--red-light)' : 'var(--text-light)';
+    totalRelEl.textContent = tStr;
+    totalRelEl.style.color = tColor;
+    totalRelEl.style.background = tColor + '1a';
+    if (totalScoreEl) totalScoreEl.textContent = tScore > 0 ? tScore + '타' : '-';
   }
   // 상대타수 레이블 업데이트
   const relEl = document.getElementById(`rel_${pid}_${hi}`);
