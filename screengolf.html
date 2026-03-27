@@ -1366,9 +1366,9 @@ function renderScorecard() {
         <div class="hole-number-display">
           <div class="hole-num-big">${hi+1}<span style="font-size:20px;opacity:0.5"> / 18</span></div>
           <div class="hole-par-label">
-            <button onclick="adjustHolePar(${hi},-1)" style="background:none;border:none;color:var(--gold-light);font-size:18px;font-weight:700;cursor:pointer;padding:0 6px;line-height:1;opacity:0.8">－</button>
-            <span id="holeParDisplay">파 ${par}</span>
-            <button onclick="adjustHolePar(${hi},1)" style="background:none;border:none;color:var(--gold-light);font-size:18px;font-weight:700;cursor:pointer;padding:0 6px;line-height:1;opacity:0.8">＋</button>
+            <button onclick="adjustHolePar(${hi},-1)" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:var(--gold-light);font-size:22px;font-weight:700;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center">－</button>
+            <span id="holeParDisplay" style="font-size:15px;font-weight:700;margin:0 6px">파 ${par}</span>
+            <button onclick="adjustHolePar(${hi},1)" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:var(--gold-light);font-size:22px;font-weight:700;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center">＋</button>
             ${multBadge}
           </div>
         </div>
