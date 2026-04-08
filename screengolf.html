@@ -1310,6 +1310,14 @@ function renderScorecard() {
   let mult = 1;
   if (match.bettingRule?.birdieBonus && holeScoresForMult.filter(s=>!birdieExempt.includes(s.pid)).some(s=>s.score===par-1)) mult++;
   if (match.bettingRule?.doubleParBonus && holeScoresForMult.filter(s=>!doubleParExempt.includes(s.pid)).some(s=>s.score>=par*2)) mult++;
+  // 올타이 캐리: 이전 홀이 전원 동점이면 이번 홀 ×2
+  let allTieCarryBadge = '';
+  if (match.bettingRule?.allTieDouble && hi > 0) {
+    const prevScores = players.map(p => Number(match.scores[p.id]?.[hi - 1])).filter(s => s > 0);
+    if (prevScores.length >= 2 && prevScores.every(s => s === prevScores[0])) {
+      allTieCarryBadge = `<span id="allTieCarryBadge" style="font-size:12px;font-weight:700;color:#2980b9;background:rgba(41,128,185,0.13);border-radius:6px;padding:2px 8px;margin-left:4px">🤝×2</span>`;
+    }
+  }
   const multBadge = mult > 1
     ? `<span id="holeMultBadge" style="font-size:12px;font-weight:700;color:${mult===3?'#c0392b':'var(--gold)'};background:${mult===3?'rgba(192,57,43,0.12)':'rgba(212,168,67,0.15)'};border-radius:6px;padding:2px 8px;margin-left:6px">×${mult}</span>`
     : `<span id="holeMultBadge"></span>`;
@@ -1369,7 +1377,7 @@ function renderScorecard() {
             <button onclick="adjustHolePar(${hi},-1)" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:var(--gold-light);font-size:22px;font-weight:700;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center">－</button>
             <span id="holeParDisplay" style="font-size:15px;font-weight:700;margin:0 6px">파 ${par}</span>
             <button onclick="adjustHolePar(${hi},1)" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.15);border:none;color:var(--gold-light);font-size:22px;font-weight:700;cursor:pointer;line-height:1;display:inline-flex;align-items:center;justify-content:center">＋</button>
-            ${multBadge}
+            ${multBadge}${allTieCarryBadge}
           </div>
         </div>
         <button class="hole-nav-btn" onclick="goHole(${hi+1})" ${hi===17?'disabled':''}>›</button>
